@@ -14,7 +14,7 @@ const fs = require('fs').promises; // 📁 per la gestione file
 require('dotenv').config();
 
 // Importa i dati dei negozi per ottenere i codici
-const negoziData = require('../frontend/src/data/negozi.json'); // 📊
+const negozi = require('./data/negozi.json'); // 📊
 
 const app = express();
 const PORT = process.env.PORT || 3001;

@@ -1,0 +1,170 @@
+[
+  {
+    "nome": "FDV Office",
+    "codice": "0",
+    "indirizzo": "Via Mazzini",
+    "email": "office@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Genova Castello",
+    "codice": "101",
+    "indirizzo": "Via Bernardo Castello",
+    "email": "genova.castello@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Bologna S.Stefano",
+    "codice": "106",
+    "indirizzo": "Via Santo Stefano",
+    "email": "bologna.stefano@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Roma Parioli",
+    "codice": "107",
+    "indirizzo": "Via Po",
+    "email": "roma.parioli@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Novara",
+    "codice": "112",
+    "indirizzo": "Via Carlo Negroni",
+    "email": "novara@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Milano Sempione",
+    "codice": "113",
+    "indirizzo": "Via Agostino Bertani",
+    "email": "milano.sempione@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Torino Carlina",
+    "codice": "114",
+    "indirizzo": "Piazza Carlo Emanuele II",
+    "email": "torino.carlina@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Torino GM",
+    "codice": "117",
+    "indirizzo": "Piazza Gran Madre di Dio",
+    "email": "torino.gm@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Varese",
+    "codice": "119",
+    "indirizzo": "Via Donizetti",
+    "email": "varese@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Milano Isola",
+    "codice": "120",
+    "indirizzo": "Via Tahon Di Ravel",
+    "email": "milano.isola@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Milano Citylife",
+    "codice": "121",
+    "indirizzo": "Piazza Tre Torri c/o CC \"Citylife\"",
+    "email": "milano.citylife@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Arese",
+    "codice": "122",
+    "indirizzo": "Via Giuseppe Eugenio Luraghi CC \"Il Centro\"",
+    "email": "arese@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Torino IV Marzo",
+    "codice": "123",
+    "indirizzo": "Via IV Marzo",
+    "email": "torino.ivmarzo@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Parma",
+    "codice": "124",
+    "indirizzo": "Via Melloni",
+    "email": "parma@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Milano Bicocca",
+    "codice": "125",
+    "indirizzo": "Viale Sarca c/o CC \"Bicocca Village\"",
+    "email": "milano.bicocca@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Monza",
+    "codice": "126",
+    "indirizzo": "Via Appiani",
+    "email": "monza@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Milano Premuda",
+    "codice": "127",
+    "indirizzo": "Viale Premuda",
+    "email": "milano.premuda@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Genova Mare",
+    "codice": "128",
+    "indirizzo": "Corso Italia",
+    "email": "genova.mare@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Alessandria",
+    "codice": "129",
+    "indirizzo": "Via Migliara",
+    "email": "alessandria@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Torino Vanchiglia",
+    "codice": "130",
+    "indirizzo": "Via Guastalla",
+    "email": "torino.vanchiglia@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Milano Porta Venezia",
+    "codice": "131",
+    "indirizzo": "Viale Vittorio Veneto",
+    "email": "milano.portavenezia@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Modena",
+    "codice": "132",
+    "indirizzo": "Via del Taglio",
+    "email": "modena@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Roma Ostiense",
+    "codice": "133",
+    "indirizzo": "Via del Porto Fluviale",
+    "email": "roma.ostiense@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Asti",
+    "codice": "134",
+    "indirizzo": "Via Ospedale",
+    "email": "asti@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Brescia Centro",
+    "codice": "135",
+    "indirizzo": "Piazza Paolo VI",
+    "email": "brescia.centro@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Torino San Salvario",
+    "codice": "136",
+    "indirizzo": "Via Sant'Anselmo",
+    "email": "torino.sansalvario@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Rimini",
+    "codice": "137",
+    "indirizzo": "Viale Tiberio",
+    "email": "rimini@fradiavolopizzeria.com"
+  },
+  {
+    "nome": "FDV Roma Trastevere",
+    "codice": "138",
+    "indirizzo": "Via di Porta Settimiana",
+    "email": "roma.trastevere@fradiavolopizzeria.com"
+  }
+]
