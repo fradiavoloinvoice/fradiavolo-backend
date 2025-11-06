@@ -374,7 +374,8 @@ const updateSheetRow = async (id, updates) => {
     confermato_da: updates.confermato_da || row.get('confermato_da'),
     txt: row.get('txt') || '',
     codice_fornitore: row.get('codice_fornitore') || '',
-    note: updates.note ?? row.get('note') || '',
+    // ⬇️ FIX: non mescolo ?? con || senza parentesi
+    note: (updates.note ?? row.get('note')) || '',
     // include colonna O (errore di conversione)
     item_noconv: row.get('item_noconv') || ''
   };
