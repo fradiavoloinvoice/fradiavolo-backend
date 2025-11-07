@@ -1,9 +1,9 @@
-// server.js - VERSIONE COMPLETA (FIX entità HTML + testo_ddt con elenco prodotti)
+// server.js - VERSIONE COMPLETA (fix: note errore, item_noconv, _ERRORI, alias sanitizeInput)
 const express = require('express');
 const archiver = require('archiver');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs'); // (non usato, lasciato per compatibilità futura)
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const rateLimit = require('express-rate-limit');
@@ -115,7 +115,7 @@ const getGoogleSheet = async (sheetName = null) => {
 // ==========================================
 // ⚠️ Fix: NON usare validator.escape (converte / in &#x2F; e " in &quot;)
 const sanitizeText = (input) => {
-  // rimuove solo caratteri di controllo, normalizza spazi; NON tocca slash/virgolette
+  // rimuove caratteri di controllo, normalizza spazi; NON tocca slash/virgolette
   return String(input ?? '')
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -124,7 +124,9 @@ const sanitizeText = (input) => {
 const sanitizeEmailSafe = (email) => String(email ?? '').trim();
 const sanitizeDateSafe = (dateString) => String(dateString ?? '').trim();
 // Consente cifre, lettere, slash, trattini, punti: es. 5011/2025, 12-AB/24
-const sanitizeDDT = (ddt) => String(ddt ?? '').trim().replace(/[^\w/.\-]/g, '');
+const sanitizeDDT = (ddt) => String(ddt ?? '').trim().replace(/[^\w/.\-\/]/g, '');
+// Alias per compatibilità con vecchio codice che chiamava sanitizeInput
+const sanitizeInput = sanitizeText;
 
 // ==========================================
 // FUNZIONI DI VALIDAZIONE
@@ -149,6 +151,7 @@ const generateTxtFile = async (invoiceData) => {
     const puntoVendita = invoiceData.punto_vendita;
     const contenutoTxt = invoiceData.txt || '';
     const noteErrori = invoiceData.note || '';
+    const itemNoConv = invoiceData.item_noconv || '';
 
     const negozio = negozi.find(n => n.nome === puntoVendita);
     const codicePV = negozio?.codice || 'UNKNOWN';
@@ -174,7 +177,10 @@ const generateTxtFile = async (invoiceData) => {
     const nomeFornitorePulito = cleanForFilename(nomeFornitore);
     const codicePVPulito = cleanForFilename(codicePV);
 
-    const hasErrors = noteErrori && noteErrori.trim() !== '';
+    // _ERRORI se ci sono note o item non convertiti
+    const hasErrors =
+      (noteErrori && noteErrori.trim() !== '') ||
+      (itemNoConv && itemNoConv.trim() !== '');
     const errorSuffix = hasErrors ? '_ERRORI' : '';
 
     const fileName = `${numeroDocPulito}_${dataFormatted}_${nomeFornitorePulito}_${codicePVPulito}${errorSuffix}.txt`;
@@ -191,7 +197,7 @@ const generateTxtFile = async (invoiceData) => {
       filePath,
       size: contenutoTxt.length,
       hasErrors,
-      noteErrori: hasErrors ? noteErrori : null
+      noteErrori: hasErrors ? (noteErrori || itemNoConv) : null
     };
   } catch (error) {
     console.error('❌ Errore generazione file TXT:', error);
@@ -266,22 +272,22 @@ const loadAllSheetData = async () => {
     const rows = await sheet.getRows();
 
     const data = rows.map(row => ({
-  id: row.get('id'),
-  numero: row.get('numero'),
-  fornitore: row.get('fornitore'),
-  data_emissione: row.get('data_emissione'),
-  data_consegna: row.get('data_consegna'),
-  stato: row.get('stato'),
-  punto_vendita: row.get('punto_vendita'),
-  confermato_da: row.get('confermato_da'),
-  pdf_link: row.get('pdf_link'),
-  importo_totale: row.get('importo_totale'),
-  note: row.get('note') || '',
-  txt: row.get('txt') || '',
-  codice_fornitore: row.get('codice_fornitore') || '',
-  testo_ddt: row.get('testo_ddt') || '',
-  item_noconv: row.get('item_noconv') || ''
-}));
+      id: row.get('id'),
+      numero: row.get('numero'),
+      fornitore: row.get('fornitore'),
+      data_emissione: row.get('data_emissione'),
+      data_consegna: row.get('data_consegna'),
+      stato: row.get('stato'),
+      punto_vendita: row.get('punto_vendita'),
+      confermato_da: row.get('confermato_da'),
+      pdf_link: row.get('pdf_link'),
+      importo_totale: row.get('importo_totale'),
+      note: row.get('note') || '',
+      txt: row.get('txt') || '',
+      codice_fornitore: row.get('codice_fornitore') || '',
+      testo_ddt: row.get('testo_ddt') || '',
+      item_noconv: row.get('item_noconv') || ''
+    }));
 
     const uniqueData = data.filter((invoice, index, self) =>
       index === self.findIndex(i => i.id === invoice.id)
@@ -299,22 +305,22 @@ const loadSheetData = async (puntoVendita) => {
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
     let data = rows.map(row => ({
-  id: row.get('id'),
-  numero: row.get('numero'),
-  fornitore: row.get('fornitore'),
-  data_emissione: row.get('data_emissione'),
-  data_consegna: row.get('data_consegna'),
-  stato: row.get('stato'),
-  punto_vendita: row.get('punto_vendita'),
-  confermato_da: row.get('confermato_da'),
-  pdf_link: row.get('pdf_link'),
-  importo_totale: row.get('importo_totale'),
-  note: row.get('note') || '',
-  txt: row.get('txt') || '',
-  codice_fornitore: row.get('codice_fornitore') || '',
-  testo_ddt: row.get('testo_ddt') || '',
-  item_noconv: row.get('item_noconv') || ''
-}));
+      id: row.get('id'),
+      numero: row.get('numero'),
+      fornitore: row.get('fornitore'),
+      data_emissione: row.get('data_emissione'),
+      data_consegna: row.get('data_consegna'),
+      stato: row.get('stato'),
+      punto_vendita: row.get('punto_vendita'),
+      confermato_da: row.get('confermato_da'),
+      pdf_link: row.get('pdf_link'),
+      importo_totale: row.get('importo_totale'),
+      note: row.get('note') || '',
+      txt: row.get('txt') || '',
+      codice_fornitore: row.get('codice_fornitore') || '',
+      testo_ddt: row.get('testo_ddt') || '',
+      item_noconv: row.get('item_noconv') || ''
+    }));
 
     if (puntoVendita) data = data.filter(r => r.punto_vendita === puntoVendita);
     return data;
@@ -469,6 +475,7 @@ const updateSheetRow = async (id, updates) => {
       throw new Error('Fattura non trovata');
     }
 
+    // Dati completi per generare il TXT (dopo il salvataggio)
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -478,7 +485,9 @@ const updateSheetRow = async (id, updates) => {
       punto_vendita: row.get('punto_vendita'),
       confermato_da: updates.confermato_da || row.get('confermato_da'),
       txt: row.get('txt') || '',
-      codice_fornitore: row.get('codice_fornitore') || ''
+      codice_fornitore: row.get('codice_fornitore') || '',
+      note: (updates.note ?? row.get('note') ?? ''),
+      item_noconv: row.get('item_noconv') || ''
     };
 
     // Applica aggiornamenti (SENZA escape HTML)
@@ -533,6 +542,7 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
       const nome = sanitizeText(p.prodotto || '');
       const qta  = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
       const um   = sanitizeText(p.unita_misura || '');
+      // esempio: "Mozzarella fior di latte - 3 KG"
       return [nome, qta ? ` - ${qta}` : '', um ? ` ${um}` : ''].join('');
     }).join('\n');
 
@@ -658,6 +668,10 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
       data_consegna: sanitizeDateSafe(data_consegna),
       confermato_da: confermatoDa
     };
+    // Salva eventuale nota di errore inviata in conferma
+    if (typeof note === 'string' && note.trim() !== '') {
+      updates.note = sanitizeText(note);
+    }
 
     await updateSheetRow(id, updates);
     res.json({ success: true, message: 'Consegna confermata' });
@@ -682,9 +696,10 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
       if (!validateEmail(confermato_da)) return res.status(400).json({ error: 'Email non valida' });
       updates.confermato_da = sanitizeEmailSafe(confermato_da);
     }
-if (typeof note === 'string') {
-  updates.note = sanitizeInput(note);
+    if (typeof note === 'string') {
+      updates.note = sanitizeText(note);
     }
+
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
     await updateSheetRow(id, updates);
@@ -1372,6 +1387,8 @@ app.get('/api/info', authenticateToken, (req, res) => {
   });
 });
 
+// ==========================================
+// ERROR HANDLER & 404
 // ==========================================
 app.use((error, req, res, next) => {
   console.error('Errore non gestito:', error);
