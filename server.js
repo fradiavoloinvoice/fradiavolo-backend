@@ -280,7 +280,7 @@ const loadAllSheetData = async () => {
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
       testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || '' // ✅ COLONNA O
+      item_noconv: row.get('item_noconv') || ''
     }));
 
     const uniqueData = data.filter((invoice, index, self) =>
@@ -313,7 +313,7 @@ const loadSheetData = async (puntoVendita) => {
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
       testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || '' // ✅ COLONNA O
+      item_noconv: row.get('item_noconv') || ''
     }));
 
     if (puntoVendita) {
@@ -346,7 +346,8 @@ const loadAllMovimentazioniData = async () => {
       stato: row.get('stato') || 'registrato',
       txt_content: row.get('txt_content') || '',
       txt_filename: row.get('txt_filename') || '',
-      creato_da: row.get('creato_da') || ''
+      creato_da: row.get('creato_da') || '',
+      ddt_number: row.get('ddt_number') || ''
     }));
 
     data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -372,7 +373,7 @@ const loadMovimentazioniFromSheet = async (puntoVendita) => {
         headerValues: [
           'id', 'data_movimento', 'timestamp', 'origine', 'codice_origine',
           'prodotto', 'quantita', 'unita_misura', 'destinazione', 'codice_destinazione',
-          'stato', 'txt_content', 'txt_filename', 'creato_da'
+          'stato', 'txt_content', 'txt_filename', 'creato_da', 'ddt_number'
         ]
       });
     }
@@ -392,7 +393,8 @@ const loadMovimentazioniFromSheet = async (puntoVendita) => {
       stato: row.get('stato') || 'registrato',
       txt_content: row.get('txt_content') || '',
       txt_filename: row.get('txt_filename') || '',
-      creato_da: row.get('creato_da') || ''
+      creato_da: row.get('creato_da') || '',
+      ddt_number: row.get('ddt_number') || ''
     }));
 
     if (puntoVendita && puntoVendita !== 'ADMIN_GLOBAL') {
@@ -501,48 +503,51 @@ const updateSheetRow = async (id, updates) => {
   }
 };
 
-const generateInvoiceFromMovimentazione = async (movimentazioneData) => {
+// ✅ FUNZIONE AGGIORNATA: genera UNA sola fattura per DDT
+const generateInvoiceFromMovimentazione = async (ddtData) => {
   try {
-    console.log('📄 Generando fattura automatica da movimentazione:', movimentazioneData);
+    console.log('📄 Generando fattura automatica da DDT:', ddtData.ddt_number);
 
     const sheet = await getGoogleSheet();
-
     const rows = await sheet.getRows();
-    const existingNumbers = rows
-      .map(row => row.get('numero'))
-      .filter(num => num && num.startsWith('MOV'))
-      .map(num => parseInt(num.replace('MOV', ''), 10))
-      .filter(num => !isNaN(num));
-
-    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
-    const numeroFattura = `MOV${String(nextNumber).padStart(4, '0')}`;
+    
+    // Verifica se la fattura esiste già
+    const existingInvoice = rows.find(row => row.get('numero') === ddtData.ddt_number);
+    if (existingInvoice) {
+      console.log('ℹ️ Fattura già esistente per DDT:', ddtData.ddt_number);
+      return { success: true, numeroFattura: ddtData.ddt_number, fatturaId: existingInvoice.get('id'), alreadyExists: true };
+    }
 
     const timestamp = Date.now();
-    const uniqueId = `mov_${timestamp}_${nextNumber}`;
+    const uniqueId = `ddt_${timestamp}_${ddtData.ddt_number.replace(/\//g, '_')}`;
 
-    const txtContent = movimentazioneData.txt_content || '';
+    // Combina tutti i contenuti TXT dei prodotti
+    const txtCombinato = ddtData.prodotti
+      .map(p => p.txt_content)
+      .filter(Boolean)
+      .join('\n');
 
     const fatturaData = {
       id: uniqueId,
-      numero: numeroFattura,
-      fornitore: movimentazioneData.origine,
-      data_emissione: movimentazioneData.data_movimento,
+      numero: ddtData.ddt_number,
+      fornitore: ddtData.origine,
+      data_emissione: ddtData.data_movimento,
       data_consegna: '',
       stato: 'pending',
-      punto_vendita: movimentazioneData.destinazione,
+      punto_vendita: ddtData.destinazione,
       confermato_da: '',
       pdf_link: '#',
       importo_totale: '0.00',
-      note: `Fattura automatica da movimentazione: ${movimentazioneData.prodotto} (${movimentazioneData.quantita} ${movimentazioneData.unita_misura})`,
-      txt: txtContent,
-      codice_fornitore: movimentazioneData.codice_origine || 'TRANSFER',
-      item_noconv: '' // ✅ COLONNA O vuota per default
+      note: `DDT con ${ddtData.prodotti.length} prodotti da ${ddtData.origine} a ${ddtData.destinazione}`,
+      txt: txtCombinato,
+      codice_fornitore: ddtData.codice_origine || 'TRANSFER',
+      item_noconv: ''
     };
 
     await sheet.addRow(fatturaData);
-    console.log('✅ Fattura automatica creata:', numeroFattura);
+    console.log('✅ Fattura automatica creata:', ddtData.ddt_number);
 
-    return { success: true, numeroFattura, fatturaId: uniqueId };
+    return { success: true, numeroFattura: ddtData.ddt_number, fatturaId: uniqueId };
   } catch (error) {
     console.error('❌ Errore generazione fattura da movimentazione:', error);
     return { success: false, error: error.message };
@@ -684,9 +689,12 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
 // ==========================================
 // ROUTES - MOVIMENTAZIONI
 // ==========================================
-const saveMovimentazioniToSheet = async (movimenti, origine) => {
+// ✅ FUNZIONE AGGIORNATA: salva TUTTE le righe + genera UNA sola fattura
+const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
   try {
     console.log('📦 Salvando movimentazioni su Google Sheets...');
+    console.log('📄 DDT Number:', ddtNumber);
+    console.log('📦 Numero prodotti:', movimenti.length);
 
     let sheet;
     try {
@@ -699,7 +707,7 @@ const saveMovimentazioniToSheet = async (movimenti, origine) => {
         headerValues: [
           'id', 'data_movimento', 'timestamp', 'origine', 'codice_origine',
           'prodotto', 'quantita', 'unita_misura', 'destinazione', 'codice_destinazione',
-          'stato', 'txt_content', 'txt_filename', 'creato_da'
+          'stato', 'txt_content', 'txt_filename', 'creato_da', 'ddt_number'
         ]
       });
     }
@@ -707,8 +715,9 @@ const saveMovimentazioniToSheet = async (movimenti, origine) => {
     const timestamp = new Date().toISOString();
     const dataOggi = new Date().toLocaleDateString('it-IT');
 
+    // ✅ Crea UNA riga per ogni prodotto nel DDT
     const righe = movimenti.map((movimento, index) => ({
-      id: `${timestamp}-${index}`,
+      id: `${ddtNumber.replace(/\//g, '_')}_${index}`,
       data_movimento: dataOggi,
       timestamp,
       origine: movimento.origine || origine,
@@ -721,23 +730,33 @@ const saveMovimentazioniToSheet = async (movimenti, origine) => {
       stato: 'registrato',
       txt_content: movimento.txt_content || '',
       txt_filename: movimento.txt_filename || '',
-      creato_da: movimento.creato_da || ''
+      creato_da: movimento.creato_da || '',
+      ddt_number: ddtNumber
     }));
 
+    // ✅ Salva TUTTE le righe nel foglio Movimentazioni
     await sheet.addRows(righe);
+    console.log(`✅ ${righe.length} righe salvate nel foglio Movimentazioni`);
 
-    const fattureGenerate = [];
-    for (let i = 0; i < righe.length; i++) {
-      const fatturaResult = await generateInvoiceFromMovimentazione(righe[i]);
-      fattureGenerate.push(fatturaResult);
-    }
+    // ✅ Genera UNA sola fattura per l'intero DDT
+    const ddtData = {
+      ddt_number: ddtNumber,
+      origine: movimenti[0].origine || origine,
+      codice_origine: movimenti[0].codice_origine || '',
+      destinazione: movimenti[0].destinazione,
+      codice_destinazione: movimenti[0].codice_destinazione || '',
+      data_movimento: dataOggi,
+      prodotti: righe
+    };
+
+    const fatturaResult = await generateInvoiceFromMovimentazione(ddtData);
 
     return {
       success: true,
       righe_inserite: righe.length,
-      fatture_generate: fattureGenerate.filter(f => f.success).length,
-      fatture_errori: fattureGenerate.filter(f => !f.success).length,
-      dettagli_fatture: fattureGenerate
+      fattura_generata: fatturaResult.success ? 1 : 0,
+      fattura_gia_esistente: fatturaResult.alreadyExists || false,
+      dettagli_fattura: fatturaResult
     };
   } catch (error) {
     console.error('❌ Errore salvataggio movimentazioni:', error);
@@ -756,16 +775,20 @@ app.get('/api/movimentazioni', authenticateToken, async (req, res) => {
   }
 });
 
+// ✅ ENDPOINT AGGIORNATO: riceve ddtNumber dal frontend
 app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
   console.log('🔄 POST /api/movimentazioni ricevuta');
   try {
-    const { movimenti, origine, creato_da_email } = req.body;
+    const { movimenti, origine, creato_da_email, ddt_number } = req.body;
 
     if (!movimenti || !Array.isArray(movimenti) || movimenti.length === 0) {
       return res.status(400).json({ error: 'Lista movimenti richiesta' });
     }
     if (!origine || origine.trim() === '') {
       return res.status(400).json({ error: 'Punto vendita di origine richiesto' });
+    }
+    if (!ddt_number || ddt_number.trim() === '') {
+      return res.status(400).json({ error: 'Numero DDT richiesto' });
     }
     if (req.user.puntoVendita !== origine && req.user.role !== 'admin') {
       return res.status(403).json({ error: 'Non autorizzato per questo punto vendita' });
@@ -801,20 +824,22 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
       movimento.txt_content = movimento.txt_content || '';
       movimento.creato_da = customCreatoDa;
       movimento.origine = customOrigin;
+      movimento.ddt_number = sanitizeInput(ddt_number);
     }
 
-    const result = await saveMovimentazioniToSheet(movimenti, sanitizeInput(customOrigin));
+    const result = await saveMovimentazioniToSheet(
+      movimenti, 
+      sanitizeInput(customOrigin),
+      sanitizeInput(ddt_number)
+    );
 
-    let successMessage = `✅ ${result.righe_inserite} movimenti registrati con successo`;
-    if (result.fatture_generate > 0) {
-      successMessage += ` - ${result.fatture_generate} fattura/e automatica/e create nella sezione "Da Confermare"`;
-    }
-    if (result.fatture_errori > 0) {
-      successMessage += ` - ${result.fatture_errori} errore/i nella generazione fatture`;
-    }
-    if (result.dettagli_fatture?.length) {
-      const ok = result.dettagli_fatture.filter(f => f.success).map(f => f.numeroFattura);
-      if (ok.length) successMessage += ` - Fatture: ${ok.join(', ')}`;
+    let successMessage = `✅ DDT ${ddt_number}: ${result.righe_inserite} prodotti registrati`;
+    if (result.fattura_generata > 0) {
+      if (result.fattura_gia_esistente) {
+        successMessage += ` - Fattura già esistente nella sezione "Da Confermare"`;
+      } else {
+        successMessage += ` - Fattura automatica creata nella sezione "Da Confermare"`;
+      }
     }
 
     res.json({
@@ -1121,30 +1146,19 @@ app.get('/api/txt-files/:filename', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// ✅ ENDPOINT AGGIORNATO CON COLONNA O (item_noconv)
-// ==========================================
 app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) => {
   try {
     const { filename } = req.params;
     
-    // Validazione nome file
     if (!filename.endsWith('.txt') || filename.includes('..') || filename.includes('/')) {
       return res.status(400).json({ error: 'Nome file non valido' });
     }
     
     const filePath = path.join(TXT_FILES_DIR, filename);
-    
-    // Verifica esistenza file
     await fs.access(filePath);
-    
-    // Leggi contenuto file TXT
     const fileContent = await fs.readFile(filePath, 'utf8');
-    
-    // Verifica se ha suffisso _ERRORI
     const hasErrorSuffix = filename.includes('_ERRORI');
     
-    // Inizializza risposta
     const response = {
       success: true,
       filename,
@@ -1154,40 +1168,30 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
       errorDetails: null
     };
     
-    // Estrai numero documento dal filename per cercare nel database
-    // Formato: NUMEROFATTURA_DATA_FORNITORE_CODICEPV.txt o NUMEROFATTURA_DATA_FORNITORE_CODICEPV_ERRORI.txt
     const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
     const parts = cleanFilename.split('_');
-    const numeroDocumento = parts[0]; // Primo elemento = numero documento
+    const numeroDocumento = parts[0];
     
     console.log(`📄 Ricerca errori nel database per: ${numeroDocumento}`);
     
-    // Cerca la fattura nel database
     try {
       const allInvoices = await loadAllSheetData();
-      const relatedInvoice = allInvoices.find(inv => 
-        inv.numero === numeroDocumento
-      );
+      const relatedInvoice = allInvoices.find(inv => inv.numero === numeroDocumento);
       
       if (relatedInvoice) {
         console.log(`✅ Fattura trovata nel database: ${relatedInvoice.numero}`);
-        
-        // Inizializza errorDetails
         const errorDetails = {};
         
-        // ERRORE SEGNALATO IN CONSEGNA (colonna "note")
         if (relatedInvoice.note && relatedInvoice.note.trim() !== '') {
           errorDetails.note_errori = relatedInvoice.note.trim();
           console.log(`⚠️ Errore consegna trovato: ${errorDetails.note_errori}`);
         }
         
-        // ✅ ERRORE DI CONVERSIONE (colonna O - "item_noconv")
         if (relatedInvoice.item_noconv && relatedInvoice.item_noconv.trim() !== '') {
           errorDetails.item_noconv = relatedInvoice.item_noconv.trim();
           console.log(`⚠️ Errore conversione trovato: ${errorDetails.item_noconv}`);
         }
         
-        // Aggiungi altri dettagli utili
         if (Object.keys(errorDetails).length > 0) {
           errorDetails.data_consegna = relatedInvoice.data_consegna;
           errorDetails.confermato_da = relatedInvoice.confermato_da;
@@ -1197,7 +1201,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
           
           response.errorDetails = errorDetails;
           response.hasErrors = true;
-          
           console.log(`✅ Dettagli errore completi:`, errorDetails);
         }
       } else {
@@ -1205,7 +1208,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
       }
     } catch (searchError) {
       console.error('❌ Errore ricerca fattura nel database:', searchError);
-      // Non bloccare la risposta, continua comunque
     }
     
     res.json(response);
