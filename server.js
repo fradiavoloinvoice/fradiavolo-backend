@@ -279,6 +279,7 @@ const loadAllSheetData = async () => {
       note: row.get('note') || '',
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
+      note: (updates.note ?? row.get('note') ?? '')
       testo_ddt: row.get('testo_ddt') || '',
       item_noconv: row.get('item_noconv') || ''
     }));
@@ -641,7 +642,7 @@ app.get('/api/invoices', authenticateToken, async (req, res) => {
 app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data_consegna, confermato_da_email } = req.body;
+    const { data_consegna, confermato_da_email, note } = req.body;
 
     if (!id || !data_consegna) {
       return res.status(400).json({ error: 'ID fattura e data consegna richiesti' });
@@ -670,7 +671,7 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
 app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data_consegna, confermato_da } = req.body;
+    const { data_consegna, confermato_da, note } = req.body;
     if (!id) return res.status(400).json({ error: 'ID fattura richiesto' });
 
     const updates = {};
@@ -682,7 +683,9 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
       if (!validateEmail(confermato_da)) return res.status(400).json({ error: 'Email non valida' });
       updates.confermato_da = sanitizeEmailSafe(confermato_da);
     }
-
+if (typeof note === 'string') {
+  updates.note = sanitizeInput(note);
+    }
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
     await updateSheetRow(id, updates);
