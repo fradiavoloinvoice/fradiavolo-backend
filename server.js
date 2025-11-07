@@ -266,23 +266,22 @@ const loadAllSheetData = async () => {
     const rows = await sheet.getRows();
 
     const data = rows.map(row => ({
-      id: row.get('id'),
-      numero: row.get('numero'),
-      fornitore: row.get('fornitore'),
-      data_emissione: row.get('data_emissione'),
-      data_consegna: row.get('data_consegna'),
-      stato: row.get('stato'),
-      punto_vendita: row.get('punto_vendita'),
-      confermato_da: row.get('confermato_da'),
-      pdf_link: row.get('pdf_link'),
-      importo_totale: row.get('importo_totale'),
-      note: row.get('note') || '',
-      txt: row.get('txt') || '',
-      codice_fornitore: row.get('codice_fornitore') || '',
-      note: (updates.note ?? row.get('note') ?? '')
-      testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || ''
-    }));
+  id: row.get('id'),
+  numero: row.get('numero'),
+  fornitore: row.get('fornitore'),
+  data_emissione: row.get('data_emissione'),
+  data_consegna: row.get('data_consegna'),
+  stato: row.get('stato'),
+  punto_vendita: row.get('punto_vendita'),
+  confermato_da: row.get('confermato_da'),
+  pdf_link: row.get('pdf_link'),
+  importo_totale: row.get('importo_totale'),
+  note: row.get('note') || '',
+  txt: row.get('txt') || '',
+  codice_fornitore: row.get('codice_fornitore') || '',
+  testo_ddt: row.get('testo_ddt') || '',
+  item_noconv: row.get('item_noconv') || ''
+}));
 
     const uniqueData = data.filter((invoice, index, self) =>
       index === self.findIndex(i => i.id === invoice.id)
@@ -300,22 +299,22 @@ const loadSheetData = async (puntoVendita) => {
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
     let data = rows.map(row => ({
-      id: row.get('id'),
-      numero: row.get('numero'),
-      fornitore: row.get('fornitore'),
-      data_emissione: row.get('data_emissione'),
-      data_consegna: row.get('data_consegna'),
-      stato: row.get('stato'),
-      punto_vendita: row.get('punto_vendita'),
-      confermato_da: row.get('confermato_da'),
-      pdf_link: row.get('pdf_link'),
-      importo_totale: row.get('importo_totale'),
-      note: row.get('note') || '',
-      txt: row.get('txt') || '',
-      codice_fornitore: row.get('codice_fornitore') || '',
-      testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || ''
-    }));
+  id: row.get('id'),
+  numero: row.get('numero'),
+  fornitore: row.get('fornitore'),
+  data_emissione: row.get('data_emissione'),
+  data_consegna: row.get('data_consegna'),
+  stato: row.get('stato'),
+  punto_vendita: row.get('punto_vendita'),
+  confermato_da: row.get('confermato_da'),
+  pdf_link: row.get('pdf_link'),
+  importo_totale: row.get('importo_totale'),
+  note: row.get('note') || '',
+  txt: row.get('txt') || '',
+  codice_fornitore: row.get('codice_fornitore') || '',
+  testo_ddt: row.get('testo_ddt') || '',
+  item_noconv: row.get('item_noconv') || ''
+}));
 
     if (puntoVendita) data = data.filter(r => r.punto_vendita === puntoVendita);
     return data;
