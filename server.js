@@ -479,8 +479,7 @@ const updateSheetRow = async (id, updates) => {
       punto_vendita: row.get('punto_vendita'),
       confermato_da: updates.confermato_da || row.get('confermato_da'),
       txt: row.get('txt') || '',
-      codice_fornitore: row.get('codice_fornitore') || '',
-      note: updates.note || row.get('note') || ''
+      codice_fornitore: row.get('codice_fornitore') || ''
     };
 
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
@@ -526,7 +525,22 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
       .map(p => p.txt_content)
       .filter(Boolean)
       .join('\n');
-
+    
+// Elenco prodotti "come stampato nel PDF" per la colonna testo_ddt.
+// Se manca txt_content, fallback leggibile "PRODOTTO - QTA U.M."
+const elencoProdotti = ddtData.prodotti.map(p => {
+  if (p.txt_content && p.txt_content.trim() !== '') {
+    return p.txt_content.trim();
+  }
+  const q = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
+  const um = (p.unita_misura || '').trim();
+  return [
+    p.prodotto,
+    q ? ` - ${q}` : '',
+    um ? ` ${um}` : ''
+  ].join('');
+}).join('\n');
+    
     const fatturaData = {
       id: uniqueId,
       numero: ddtData.ddt_number,
@@ -538,10 +552,10 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
       confermato_da: '',
       pdf_link: '#',
       importo_totale: '0.00',
-      note: `DDT con ${ddtData.prodotti.length} prodotti da ${ddtData.origine} a ${ddtData.destinazione}`,
       txt: txtCombinato,
       codice_fornitore: ddtData.codice_origine || 'TRANSFER',
-      item_noconv: ''
+      item_noconv: '',
+      testo_ddt: elencoProdotti
     };
 
     await sheet.addRow(fatturaData);
@@ -632,7 +646,7 @@ app.get('/api/invoices', authenticateToken, async (req, res) => {
 app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data_consegna, note_errori, confermato_da_email } = req.body;
+    const { data_consegna, confermato_da_email } = req.body;
 
     if (!id || !data_consegna) {
       return res.status(400).json({ error: 'ID fattura e data consegna richiesti' });
@@ -649,7 +663,7 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
       data_consegna: sanitizeInput(data_consegna),
       confermato_da: confermatoDa
     };
-    if (note_errori && note_errori.trim()) updates.note = sanitizeInput(note_errori.trim());
+    
 
     await updateSheetRow(id, updates);
     res.json({ success: true, message: 'Consegna confermata' });
@@ -662,7 +676,7 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
 app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data_consegna, confermato_da, note } = req.body;
+    const { data_consegna, confermato_da } = req.body;
     if (!id) return res.status(400).json({ error: 'ID fattura richiesto' });
 
     const updates = {};
@@ -674,7 +688,7 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
       if (!validateEmail(confermato_da)) return res.status(400).json({ error: 'Email non valida' });
       updates.confermato_da = sanitizeInput(confermato_da);
     }
-    if (note !== undefined) updates.note = sanitizeInput(note);
+    
 
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
