@@ -666,7 +666,8 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
     const updates = {
       stato: 'consegnato',
       data_consegna: sanitizeDateSafe(data_consegna),
-      confermato_da: confermatoDa
+      confermato_da: confermatoDa,
+      note: note_errori,
     };
     // Salva eventuale nota di errore inviata in conferma
     if (typeof note === 'string' && note.trim() !== '') {
