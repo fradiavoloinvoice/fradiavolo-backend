@@ -651,30 +651,37 @@ app.get('/api/invoices', authenticateToken, async (req, res) => {
 app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data_consegna, confermato_da_email, note } = req.body;
+    const body = req.body ?? {};
 
-    if (!id || !data_consegna) {
+    const data_consegna_raw = body.data_consegna;
+    const confermato_da_email_raw = body.confermato_da_email;
+
+    if (!id || !data_consegna_raw) {
       return res.status(400).json({ error: 'ID fattura e data consegna richiesti' });
     }
-    if (!validateDate(data_consegna)) return res.status(400).json({ error: 'Data non valida' });
-
-    let confermatoDa = req.user.email;
-    if (req.user.role === 'admin' && confermato_da_email && validateEmail(confermato_da_email)) {
-      confermatoDa = sanitizeEmailSafe(confermato_da_email);
+    if (!validateDate(data_consegna_raw)) {
+      return res.status(400).json({ error: 'Data non valida' });
     }
+
+    // Chi conferma
+    let confermatoDa = req.user.email;
+    if (req.user.role === 'admin' && typeof confermato_da_email_raw === 'string' && validateEmail(confermato_da_email_raw)) {
+      confermatoDa = sanitizeEmailSafe(confermato_da_email_raw);
+    }
+
+    // Prende la prima nota non vuota tra note_errori e note
+    const noteFromBody =
+      (typeof body.note_errori === 'string' && body.note_errori.trim() !== '' ? body.note_errori :
+      (typeof body.note === 'string' && body.note.trim() !== '' ? body.note : ''));
 
     const updates = {
       stato: 'consegnato',
-      data_consegna: sanitizeDateSafe(data_consegna),
+      data_consegna: sanitizeDateSafe(data_consegna_raw),
       confermato_da: confermatoDa,
-      note: note_errori,
+      ...(noteFromBody ? { note: sanitizeText(noteFromBody) } : {})
     };
-    // Salva eventuale nota di errore inviata in conferma
-    if (typeof note === 'string' && note.trim() !== '') {
-      updates.note = sanitizeText(note);
-    }
 
-    await updateSheetRow(id, updates);
+    await updateSheetRow(String(id), updates);
     res.json({ success: true, message: 'Consegna confermata' });
   } catch (error) {
     console.error('Errore conferma:', error);
