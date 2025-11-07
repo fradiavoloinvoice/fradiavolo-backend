@@ -520,43 +520,43 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
     const timestamp = Date.now();
     const uniqueId = `ddt_${timestamp}_${ddtData.ddt_number.replace(/\//g, '_')}`;
 
-    // Combina tutti i contenuti TXT dei prodotti
-    const txtCombinato = ddtData.prodotti
-      .map(p => p.txt_content)
-      .filter(Boolean)
-      .join('\n');
-    
-// Elenco prodotti "come stampato nel PDF" per la colonna testo_ddt.
-// Se manca txt_content, fallback leggibile "PRODOTTO - QTA U.M."
+   // Combina tutti i contenuti TXT dei prodotti (RESTANO nella colonna "txt")
+const txtCombinato = ddtData.prodotti
+  .map(p => p.txt_content)
+  .filter(Boolean)
+  .join('\n');
+
+// ✅ Elenco prodotti SOLO come "PRODOTTO - QTA U.M." per la colonna "testo_ddt"
+// (ignora completamente txt_content)
 const elencoProdotti = ddtData.prodotti.map(p => {
-  if (p.txt_content && p.txt_content.trim() !== '') {
-    return p.txt_content.trim();
-  }
-  const q = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
-  const um = (p.unita_misura || '').trim();
+  const nome = (p.prodotto || '').trim();
+  const qta  = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
+  const um   = (p.unita_misura || '').trim();
+
+  // es: "Mozzarella fior di latte - 3 KG"
   return [
-    p.prodotto,
-    q ? ` - ${q}` : '',
-    um ? ` ${um}` : ''
+    nome,
+    qta ? ` - ${qta}` : '',
+    um  ? ` ${um}`   : ''
   ].join('');
 }).join('\n');
     
-    const fatturaData = {
-      id: uniqueId,
-      numero: ddtData.ddt_number,
-      fornitore: ddtData.origine,
-      data_emissione: ddtData.data_movimento,
-      data_consegna: '',
-      stato: 'pending',
-      punto_vendita: ddtData.destinazione,
-      confermato_da: '',
-      pdf_link: '#',
-      importo_totale: '0.00',
-      txt: txtCombinato,
-      codice_fornitore: ddtData.codice_origine || 'TRANSFER',
-      item_noconv: '',
-      testo_ddt: elencoProdotti
-    };
+   const fatturaData = {
+  id: uniqueId,
+  numero: ddtData.ddt_number,
+  fornitore: ddtData.origine,
+  data_emissione: ddtData.data_movimento,
+  data_consegna: '',
+  stato: 'pending',
+  punto_vendita: ddtData.destinazione,
+  confermato_da: '',
+  pdf_link: '#',
+  importo_totale: '0.00',
+  txt: txtCombinato,       // <-- i TXT rimangono qui
+  codice_fornitore: ddtData.codice_origine || 'TRANSFER',
+  item_noconv: '',
+  testo_ddt: elencoProdotti // <-- SOLO elenco prodotti formattato
+};
 
     await sheet.addRow(fatturaData);
     console.log('✅ Fattura automatica creata:', ddtData.ddt_number);
