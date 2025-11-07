@@ -1,4 +1,4 @@
-// server.js - VERSIONE COMPLETA CON VISUALIZZAZIONE ERRORI DA COLONNA O
+// server.js - VERSIONE COMPLETA (FIX entità HTML + testo_ddt con elenco prodotti)
 const express = require('express');
 const archiver = require('archiver');
 const cors = require('cors');
@@ -13,14 +13,14 @@ const path = require('path');
 const fs = require('fs').promises;
 require('dotenv').config();
 
-// Importa i dati dei negozi per ottenere i codici
+// Import dati negozi per codici/lookup
 const negozi = require('./data/negozi.json');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+
 const localServiceAccountPath = path.join(__dirname, 'credentials', 'google-service-account.local.json');
 let localServiceAccount;
-
 try {
   localServiceAccount = require(localServiceAccountPath);
 } catch (error) {
@@ -29,6 +29,7 @@ try {
   }
 }
 
+// Stato credenziali
 const hasGoogleEmailEnv = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
 const hasGoogleEmailLocal = Boolean(localServiceAccount?.client_email);
 const hasGoogleKeyEnv = Boolean(process.env.GOOGLE_PRIVATE_KEY);
@@ -38,7 +39,7 @@ const googleKeySource = hasGoogleKeyEnv ? 'env' : hasGoogleKeyLocal ? 'local fil
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
 // ==========================================
-// VERIFICA CONFIGURAZIONE STARTUP
+// LOG CONFIGURAZIONE STARTUP
 // ==========================================
 console.log('🔍 VERIFICA CONFIGURAZIONE STARTUP:');
 console.log('📊 PORT:', PORT);
@@ -47,18 +48,14 @@ console.log('📊 GOOGLE_SHEET_ID:', GOOGLE_SHEET_ID ? 'CONFIGURATO' : 'MANCANTE
 console.log('🤖 GOOGLE_SERVICE_ACCOUNT_EMAIL:', googleEmailSource === 'missing' ? 'MANCANTE' : `CONFIGURATO (${googleEmailSource})`);
 console.log('🔑 GOOGLE_PRIVATE_KEY:', googleKeySource === 'missing' ? 'MANCANTE' : `DISPONIBILE (${googleKeySource})`);
 
-// Crea cartella per i file TXT se non esiste
+// ==========================================
+// CARTELLA FILE TXT
+// ==========================================
 const TXT_FILES_DIR = path.join(__dirname, 'generated_txt_files');
-
 const ensureTxtDir = async () => {
-  try {
-    await fs.access(TXT_FILES_DIR);
-  } catch {
-    console.log('📁 Creando cartella per file TXT:', TXT_FILES_DIR);
-    await fs.mkdir(TXT_FILES_DIR, { recursive: true });
-  }
+  try { await fs.access(TXT_FILES_DIR); }
+  catch { console.log('📁 Creando cartella per file TXT:', TXT_FILES_DIR); await fs.mkdir(TXT_FILES_DIR, { recursive: true }); }
 };
-
 ensureTxtDir()
   .then(() => console.log('📁 Cartella file TXT pronta:', TXT_FILES_DIR))
   .catch(error => console.error('❌ Errore creazione cartella TXT:', error));
@@ -68,25 +65,16 @@ ensureTxtDir()
 // ==========================================
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
-
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
-  message: 'Troppe richieste da questo IP'
-});
-app.use(limiter);
-
-const loginLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 5,
-  message: 'Troppi tentativi di login. Riprova tra 15 minuti.'
-});
-
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, message: 'Troppe richieste da questo IP' });
+app.use(limiter);
+
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, message: 'Troppi tentativi di login. Riprova tra 15 minuti.' });
+
 // ==========================================
-/** CONFIGURAZIONE GOOGLE SHEETS */
+// GOOGLE SHEETS
 // ==========================================
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || localServiceAccount?.client_email;
 const rawGooglePrivateKey = process.env.GOOGLE_PRIVATE_KEY || localServiceAccount?.private_key;
@@ -107,7 +95,6 @@ const getGoogleDoc = async () => {
   await doc.loadInfo();
   return doc;
 };
-
 const getGoogleSheet = async (sheetName = null) => {
   try {
     const doc = await getGoogleDoc();
@@ -124,7 +111,33 @@ const getGoogleSheet = async (sheetName = null) => {
 };
 
 // ==========================================
-// FUNZIONE AGGIORNATA PER GENERARE FILE TXT
+// SANIFICATORI (NO ESCAPE HTML)
+// ==========================================
+// ⚠️ Fix: NON usare validator.escape (converte / in &#x2F; e " in &quot;)
+const sanitizeText = (input) => {
+  // rimuove solo caratteri di controllo, normalizza spazi; NON tocca slash/virgolette
+  return String(input ?? '')
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+const sanitizeEmailSafe = (email) => String(email ?? '').trim();
+const sanitizeDateSafe = (dateString) => String(dateString ?? '').trim();
+// Consente cifre, lettere, slash, trattini, punti: es. 5011/2025, 12-AB/24
+const sanitizeDDT = (ddt) => String(ddt ?? '').trim().replace(/[^\w/.\-]/g, '');
+
+// ==========================================
+// FUNZIONI DI VALIDAZIONE
+// ==========================================
+const validateEmail = (email) =>
+  validator.isEmail(email) &&
+  (email.includes('@fradiavolopizzeria.com') || email.includes('@azienda.it'));
+
+const validateDate = (dateString) =>
+  validator.isDate(dateString) && new Date(dateString) <= new Date();
+
+// ==========================================
+// GENERAZIONE FILE TXT (per fatture consegnate)
 // ==========================================
 const generateTxtFile = async (invoiceData) => {
   try {
@@ -168,14 +181,14 @@ const generateTxtFile = async (invoiceData) => {
     const filePath = path.join(TXT_FILES_DIR, fileName);
 
     await fs.writeFile(filePath, contenutoTxt, 'utf8');
-    
+
     console.log(hasErrors
       ? `⚠️ File TXT CON ERRORI generato: ${fileName}`
       : `✅ File TXT generato con successo: ${fileName}`);
 
-    return { 
-      fileName, 
-      filePath, 
+    return {
+      fileName,
+      filePath,
       size: contenutoTxt.length,
       hasErrors,
       noteErrori: hasErrors ? noteErrori : null
@@ -225,7 +238,7 @@ console.log('👥 Utenti disponibili:', users.length);
 console.log('🏢 Punti vendita configurati:', [...new Set(users.map(u => u.puntoVendita))].length);
 
 // ==========================================
-// MIDDLEWARE DI AUTENTICAZIONE JWT
+// AUTH MIDDLEWARE
 // ==========================================
 const authenticateToken = (req, res, next) => {
   const token = (req.headers['authorization'] || '').split(' ')[1];
@@ -237,7 +250,6 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
-
 const requireAdmin = (req, res, next) => {
   console.log('🔒 Verifica permessi admin per:', req.user.email, 'Role:', req.user.role);
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'Accesso riservato agli amministratori' });
@@ -245,19 +257,7 @@ const requireAdmin = (req, res, next) => {
 };
 
 // ==========================================
-// FUNZIONI DI VALIDAZIONE
-// ==========================================
-const validateEmail = (email) =>
-  validator.isEmail(email) &&
-  (email.includes('@fradiavolopizzeria.com') || email.includes('@azienda.it'));
-
-const validateDate = (dateString) =>
-  validator.isDate(dateString) && new Date(dateString) <= new Date();
-
-const sanitizeInput = (input) => validator.escape(String(input ?? '').trim());
-
-// ==========================================
-// FUNZIONI GOOGLE SHEETS - FATTURE
+// SHEETS HELPERS (fatture)
 // ==========================================
 const loadAllSheetData = async () => {
   try {
@@ -316,9 +316,7 @@ const loadSheetData = async (puntoVendita) => {
       item_noconv: row.get('item_noconv') || ''
     }));
 
-    if (puntoVendita) {
-      data = data.filter(r => r.punto_vendita === puntoVendita);
-    }
+    if (puntoVendita) data = data.filter(r => r.punto_vendita === puntoVendita);
     return data;
   } catch (error) {
     console.error('❌ Errore loadSheetData:', error);
@@ -326,6 +324,9 @@ const loadSheetData = async (puntoVendita) => {
   }
 };
 
+// ==========================================
+// SHEETS HELPERS (movimentazioni)
+// ==========================================
 const loadAllMovimentazioniData = async () => {
   try {
     console.log('📦 Admin: Caricamento movimentazioni globali');
@@ -409,6 +410,9 @@ const loadMovimentazioniFromSheet = async (puntoVendita) => {
   }
 };
 
+// ==========================================
+// PRODOTTI (db esterno)
+// ==========================================
 const loadProdottiFromSheet = async () => {
   try {
     console.log('📦 Caricando prodotti da database Google Sheets...');
@@ -434,15 +438,7 @@ const loadProdottiFromSheet = async () => {
       const pack       = norm(r.get('Confezione') || r.get('Pack') || r.get('Formato'));
       const materiale  = norm(r.get('Materiale') || r.get('Imballo') || r.get('Package'));
 
-      return {
-        nome,
-        codice,
-        unitaMisura: uom,
-        onOff: onoff,
-        brand,
-        pack,
-        materiale
-      };
+      return { nome, codice, unitaMisura: uom, onOff: onoff, brand, pack, materiale };
     });
 
     return prodotti.filter(p => p.nome);
@@ -457,6 +453,9 @@ const loadProdottiFromSheet = async () => {
   }
 };
 
+// ==========================================
+// UPDATE RIGA FATTURA (crea TXT alla consegna)
+// ==========================================
 const updateSheetRow = async (id, updates) => {
   try {
     console.log('🔄 updateSheetRow chiamata con:', { id, updates });
@@ -482,6 +481,7 @@ const updateSheetRow = async (id, updates) => {
       codice_fornitore: row.get('codice_fornitore') || ''
     };
 
+    // Applica aggiornamenti (SENZA escape HTML)
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
     await row.save();
 
@@ -502,15 +502,17 @@ const updateSheetRow = async (id, updates) => {
   }
 };
 
-// ✅ FUNZIONE AGGIORNATA: genera UNA sola fattura per DDT
+// ==========================================
+// Fattura da DDT (UNA fattura per DDT)
+// ==========================================
 const generateInvoiceFromMovimentazione = async (ddtData) => {
   try {
     console.log('📄 Generando fattura automatica da DDT:', ddtData.ddt_number);
 
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
-    
-    // Verifica se la fattura esiste già
+
+    // Evita duplicati
     const existingInvoice = rows.find(row => row.get('numero') === ddtData.ddt_number);
     if (existingInvoice) {
       console.log('ℹ️ Fattura già esistente per DDT:', ddtData.ddt_number);
@@ -520,43 +522,36 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
     const timestamp = Date.now();
     const uniqueId = `ddt_${timestamp}_${ddtData.ddt_number.replace(/\//g, '_')}`;
 
-   // Combina tutti i contenuti TXT dei prodotti (RESTANO nella colonna "txt")
-const txtCombinato = ddtData.prodotti
-  .map(p => p.txt_content)
-  .filter(Boolean)
-  .join('\n');
+    // Unisci eventuali TXT dei prodotti (restano nella colonna txt)
+    const txtCombinato = ddtData.prodotti
+      .map(p => p.txt_content)
+      .filter(Boolean)
+      .join('\n');
 
-// ✅ Elenco prodotti SOLO come "PRODOTTO - QTA U.M." per la colonna "testo_ddt"
-// (ignora completamente txt_content)
-const elencoProdotti = ddtData.prodotti.map(p => {
-  const nome = (p.prodotto || '').trim();
-  const qta  = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
-  const um   = (p.unita_misura || '').trim();
+    // SOLO elenco prodotti -> colonna testo_ddt
+    const elencoProdotti = ddtData.prodotti.map(p => {
+      const nome = sanitizeText(p.prodotto || '');
+      const qta  = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
+      const um   = sanitizeText(p.unita_misura || '');
+      return [nome, qta ? ` - ${qta}` : '', um ? ` ${um}` : ''].join('');
+    }).join('\n');
 
-  // es: "Mozzarella fior di latte - 3 KG"
-  return [
-    nome,
-    qta ? ` - ${qta}` : '',
-    um  ? ` ${um}`   : ''
-  ].join('');
-}).join('\n');
-    
-   const fatturaData = {
-  id: uniqueId,
-  numero: ddtData.ddt_number,
-  fornitore: ddtData.origine,
-  data_emissione: ddtData.data_movimento,
-  data_consegna: '',
-  stato: 'pending',
-  punto_vendita: ddtData.destinazione,
-  confermato_da: '',
-  pdf_link: '#',
-  importo_totale: '0.00',
-  txt: txtCombinato,       // <-- i TXT rimangono qui
-  codice_fornitore: ddtData.codice_origine || 'TRANSFER',
-  item_noconv: '',
-  testo_ddt: elencoProdotti // <-- SOLO elenco prodotti formattato
-};
+    const fatturaData = {
+      id: uniqueId,
+      numero: ddtData.ddt_number,               // mantiene slash
+      fornitore: sanitizeText(ddtData.origine),
+      data_emissione: sanitizeDateSafe(ddtData.data_movimento),
+      data_consegna: '',
+      stato: 'pending',
+      punto_vendita: sanitizeText(ddtData.destinazione),
+      confermato_da: '',
+      pdf_link: '#',
+      importo_totale: '0.00',
+      txt: txtCombinato,
+      codice_fornitore: ddtData.codice_origine || 'TRANSFER',
+      item_noconv: '',
+      testo_ddt: elencoProdotti
+    };
 
     await sheet.addRow(fatturaData);
     console.log('✅ Fattura automatica creata:', ddtData.ddt_number);
@@ -655,15 +650,14 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
 
     let confermatoDa = req.user.email;
     if (req.user.role === 'admin' && confermato_da_email && validateEmail(confermato_da_email)) {
-      confermatoDa = sanitizeInput(confermato_da_email);
+      confermatoDa = sanitizeEmailSafe(confermato_da_email);
     }
 
     const updates = {
       stato: 'consegnato',
-      data_consegna: sanitizeInput(data_consegna),
+      data_consegna: sanitizeDateSafe(data_consegna),
       confermato_da: confermatoDa
     };
-    
 
     await updateSheetRow(id, updates);
     res.json({ success: true, message: 'Consegna confermata' });
@@ -682,13 +676,12 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
     const updates = {};
     if (data_consegna) {
       if (!validateDate(data_consegna)) return res.status(400).json({ error: 'Data non valida' });
-      updates.data_consegna = sanitizeInput(data_consegna);
+      updates.data_consegna = sanitizeDateSafe(data_consegna);
     }
     if (confermato_da) {
       if (!validateEmail(confermato_da)) return res.status(400).json({ error: 'Email non valida' });
-      updates.confermato_da = sanitizeInput(confermato_da);
+      updates.confermato_da = sanitizeEmailSafe(confermato_da);
     }
-    
 
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
@@ -703,7 +696,7 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
 // ==========================================
 // ROUTES - MOVIMENTAZIONI
 // ==========================================
-// ✅ FUNZIONE AGGIORNATA: salva TUTTE le righe + genera UNA sola fattura
+// Salva TUTTE le righe prodotto + genera UNA fattura per DDT
 const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
   try {
     console.log('📦 Salvando movimentazioni su Google Sheets...');
@@ -729,7 +722,7 @@ const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
     const timestamp = new Date().toISOString();
     const dataOggi = new Date().toLocaleDateString('it-IT');
 
-    // ✅ Crea UNA riga per ogni prodotto nel DDT
+    // Crea UNA riga per ogni prodotto del DDT
     const righe = movimenti.map((movimento, index) => ({
       id: `${ddtNumber.replace(/\//g, '_')}_${index}`,
       data_movimento: dataOggi,
@@ -745,14 +738,13 @@ const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
       txt_content: movimento.txt_content || '',
       txt_filename: movimento.txt_filename || '',
       creato_da: movimento.creato_da || '',
-      ddt_number: ddtNumber
+      ddt_number: ddtNumber // mantiene slash
     }));
 
-    // ✅ Salva TUTTE le righe nel foglio Movimentazioni
     await sheet.addRows(righe);
     console.log(`✅ ${righe.length} righe salvate nel foglio Movimentazioni`);
 
-    // ✅ Genera UNA sola fattura per l'intero DDT
+    // Genera fattura unica per l'intero DDT
     const ddtData = {
       ddt_number: ddtNumber,
       origine: movimenti[0].origine || origine,
@@ -789,7 +781,7 @@ app.get('/api/movimentazioni', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ ENDPOINT AGGIORNATO: riceve ddtNumber dal frontend
+// Riceve anche ddt_number dal frontend
 app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
   console.log('🔄 POST /api/movimentazioni ricevuta');
   try {
@@ -818,36 +810,35 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
       }
     }
 
-    for (let i = 0; i < movimenti.length; i++) {
-      const movimento = movimenti[i];
+    const ddtNumberClean = sanitizeDDT(ddt_number); // mantiene slash
 
-      if (!movimento.prodotto || movimento.prodotto.trim() === '') {
+    for (let i = 0; i < movimenti.length; i++) {
+      const m = movimenti[i];
+
+      if (!m.prodotto || m.prodotto.trim() === '') {
         return res.status(400).json({ error: `Prodotto richiesto per movimento ${i + 1}` });
       }
-      if (!movimento.quantita || isNaN(movimento.quantita) || movimento.quantita <= 0) {
+      if (!m.quantita || isNaN(m.quantita) || m.quantita <= 0) {
         return res.status(400).json({ error: `Quantità valida richiesta per movimento ${i + 1}` });
       }
-      if (!movimento.destinazione || movimento.destinazione.trim() === '') {
+      if (!m.destinazione || m.destinazione.trim() === '') {
         return res.status(400).json({ error: `Destinazione richiesta per movimento ${i + 1}` });
       }
 
-      movimento.prodotto = sanitizeInput(movimento.prodotto);
-      movimento.quantita = parseFloat(movimento.quantita);
-      movimento.unita_misura = sanitizeInput(movimento.unita_misura || '');
-      movimento.destinazione = sanitizeInput(movimento.destinazione);
-      movimento.txt_content = movimento.txt_content || '';
-      movimento.creato_da = customCreatoDa;
-      movimento.origine = customOrigin;
-      movimento.ddt_number = sanitizeInput(ddt_number);
+      // ⚠️ Fix: NO escape HTML
+      m.prodotto = sanitizeText(m.prodotto);
+      m.quantita = parseFloat(m.quantita);
+      m.unita_misura = sanitizeText(m.unita_misura || '');
+      m.destinazione = sanitizeText(m.destinazione);
+      m.txt_content = typeof m.txt_content === 'string' ? m.txt_content : '';
+      m.creato_da = customCreatoDa;
+      m.origine = customOrigin;
+      m.ddt_number = ddtNumberClean;
     }
 
-    const result = await saveMovimentazioniToSheet(
-      movimenti, 
-      sanitizeInput(customOrigin),
-      sanitizeInput(ddt_number)
-    );
+    const result = await saveMovimentazioniToSheet(movimenti, sanitizeText(customOrigin), ddtNumberClean);
 
-    let successMessage = `✅ DDT ${ddt_number}: ${result.righe_inserite} prodotti registrati`;
+    let successMessage = `✅ DDT ${ddtNumberClean}: ${result.righe_inserite} prodotti registrati`;
     if (result.fattura_generata > 0) {
       if (result.fattura_gia_esistente) {
         successMessage += ` - Fattura già esistente nella sezione "Da Confermare"`;
@@ -856,11 +847,7 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      message: successMessage,
-      data: result
-    });
+    res.json({ success: true, message: successMessage, data: result });
   } catch (error) {
     console.error('❌ Errore POST /api/movimentazioni:', error);
     res.status(500).json({ error: 'Impossibile salvare le movimentazioni' });
@@ -868,7 +855,7 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// PRODOTTI
+// ROUTES - PRODOTTI
 // ==========================================
 app.get('/api/prodotti', authenticateToken, async (req, res) => {
   console.log('🔄 GET /api/prodotti ricevuta');
@@ -906,20 +893,10 @@ app.get('/api/prodotti', authenticateToken, async (req, res) => {
       }
     }
 
-    res.json({
-      success: true,
-      sheet: 'PRODOTTI',
-      total,
-      returned: data.length,
-      nextPage,
-      data
-    });
+    res.json({ success: true, sheet: 'PRODOTTI', total, returned: data.length, nextPage, data });
   } catch (error) {
     console.error('❌ Errore caricamento prodotti:', error);
-    res.status(500).json({
-      error: 'Impossibile caricare la lista prodotti',
-      details: error.message
-    });
+    res.status(500).json({ error: 'Impossibile caricare la lista prodotti', details: error.message });
   }
 });
 
@@ -1163,16 +1140,16 @@ app.get('/api/txt-files/:filename', authenticateToken, async (req, res) => {
 app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) => {
   try {
     const { filename } = req.params;
-    
+
     if (!filename.endsWith('.txt') || filename.includes('..') || filename.includes('/')) {
       return res.status(400).json({ error: 'Nome file non valido' });
     }
-    
+
     const filePath = path.join(TXT_FILES_DIR, filename);
     await fs.access(filePath);
     const fileContent = await fs.readFile(filePath, 'utf8');
     const hasErrorSuffix = filename.includes('_ERRORI');
-    
+
     const response = {
       success: true,
       filename,
@@ -1181,38 +1158,38 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
       hasErrors: hasErrorSuffix,
       errorDetails: null
     };
-    
+
     const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
     const parts = cleanFilename.split('_');
     const numeroDocumento = parts[0];
-    
+
     console.log(`📄 Ricerca errori nel database per: ${numeroDocumento}`);
-    
+
     try {
       const allInvoices = await loadAllSheetData();
       const relatedInvoice = allInvoices.find(inv => inv.numero === numeroDocumento);
-      
+
       if (relatedInvoice) {
         console.log(`✅ Fattura trovata nel database: ${relatedInvoice.numero}`);
         const errorDetails = {};
-        
+
         if (relatedInvoice.note && relatedInvoice.note.trim() !== '') {
           errorDetails.note_errori = relatedInvoice.note.trim();
           console.log(`⚠️ Errore consegna trovato: ${errorDetails.note_errori}`);
         }
-        
+
         if (relatedInvoice.item_noconv && relatedInvoice.item_noconv.trim() !== '') {
           errorDetails.item_noconv = relatedInvoice.item_noconv.trim();
           console.log(`⚠️ Errore conversione trovato: ${errorDetails.item_noconv}`);
         }
-        
+
         if (Object.keys(errorDetails).length > 0) {
           errorDetails.data_consegna = relatedInvoice.data_consegna;
           errorDetails.confermato_da = relatedInvoice.confermato_da;
           errorDetails.fornitore = relatedInvoice.fornitore;
           errorDetails.numero = relatedInvoice.numero;
           errorDetails.punto_vendita = relatedInvoice.punto_vendita;
-          
+
           response.errorDetails = errorDetails;
           response.hasErrors = true;
           console.log(`✅ Dettagli errore completi:`, errorDetails);
@@ -1223,9 +1200,9 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
     } catch (searchError) {
       console.error('❌ Errore ricerca fattura nel database:', searchError);
     }
-    
+
     res.json(response);
-    
+
   } catch (error) {
     if (error.code === 'ENOENT') {
       return res.status(404).json({ error: 'File non trovato' });
@@ -1393,8 +1370,6 @@ app.get('/api/info', authenticateToken, (req, res) => {
   });
 });
 
-// ==========================================
-// ERROR HANDLING
 // ==========================================
 app.use((error, req, res, next) => {
   console.error('Errore non gestito:', error);
