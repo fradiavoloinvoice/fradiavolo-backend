@@ -1,9 +1,9 @@
-// server.js - AGGIORNAMENTO PER GENERAZIONE FILE TXT (VERSIONE CORRETTA)
+// server.js - VERSIONE COMPLETA CON VISUALIZZAZIONE ERRORI DA COLONNA O
 const express = require('express');
 const archiver = require('archiver');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs'); // (non usato ora, lasciato per future hardening)
+const bcrypt = require('bcryptjs');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const rateLimit = require('express-rate-limit');
@@ -90,7 +90,6 @@ app.use(express.urlencoded({ extended: true }));
 // ==========================================
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || localServiceAccount?.client_email;
 const rawGooglePrivateKey = process.env.GOOGLE_PRIVATE_KEY || localServiceAccount?.private_key;
-// normalizza eventuali \n
 const GOOGLE_PRIVATE_KEY = rawGooglePrivateKey ? rawGooglePrivateKey.replace(/\\n/g, '\n') : undefined;
 
 if (!GOOGLE_SERVICE_ACCOUNT_EMAIL || !GOOGLE_PRIVATE_KEY) {
@@ -132,13 +131,12 @@ const generateTxtFile = async (invoiceData) => {
     console.log('📄 Generando file TXT per fattura:', invoiceData.id);
 
     const numeroDocumento = invoiceData.numero;
-    const dataConsegna = invoiceData.data_consegna;  // YYYY-MM-DD
+    const dataConsegna = invoiceData.data_consegna;
     const nomeFornitore = invoiceData.fornitore;
     const puntoVendita = invoiceData.punto_vendita;
     const contenutoTxt = invoiceData.txt || '';
     const noteErrori = invoiceData.note || '';
 
-    // 🔧 FIX: usa l'array importato "negozi" (non negoziData)
     const negozio = negozi.find(n => n.nome === puntoVendita);
     const codicePV = negozio?.codice || 'UNKNOWN';
 
@@ -192,51 +190,34 @@ const generateTxtFile = async (invoiceData) => {
 // DATABASE UTENTI (mock POC)
 // ==========================================
 const users = [
-  // UFFICIO CENTRALE
-  { id: 1,   name: "FDV Office", email: "office@fradiavolopizzeria.com", password: "fdv2025", puntoVendita: "FDV Office", role: "admin" },
+  { id: 1, name: "FDV Office", email: "office@fradiavolopizzeria.com", password: "fdv2025", puntoVendita: "FDV Office", role: "admin" },
   { id: 999, name: "Admin Fradiavolo", email: "admin@fradiavolopizzeria.com", password: "admin2025", puntoVendita: "ADMIN_GLOBAL", role: "admin", permissions: ["view_all","edit_all","manage_users","analytics","reports","system_config"], storeAccess: 'global' },
-
-  // GENOVA
   { id: 101, name: "FDV Genova Castello", email: "genova.castello@fradiavolopizzeria.com", password: "castello2025", puntoVendita: "FDV Genova Castello", role: "operator" },
   { id: 128, name: "FDV Genova Mare", email: "genova.mare@fradiavolopizzeria.com", password: "mare2025", puntoVendita: "FDV Genova Mare", role: "operator" },
-
-  // MILANO
   { id: 113, name: "FDV Milano Sempione", email: "milano.sempione@fradiavolopizzeria.com", password: "sempione2025", puntoVendita: "FDV Milano Sempione", role: "operator" },
   { id: 120, name: "FDV Milano Isola", email: "milano.isola@fradiavolopizzeria.com", password: "isola2025", puntoVendita: "FDV Milano Isola", role: "operator" },
   { id: 121, name: "FDV Milano Citylife", email: "milano.citylife@fradiavolopizzeria.com", password: "citylife2025", puntoVendita: "FDV Milano Citylife", role: "operator" },
   { id: 125, name: "FDV Milano Bicocca", email: "milano.bicocca@fradiavolopizzeria.com", password: "bicocca2025", puntoVendita: "FDV Milano Bicocca", role: "operator" },
   { id: 127, name: "FDV Milano Premuda", email: "milano.premuda@fradiavolopizzeria.com", password: "premuda2025", puntoVendita: "FDV Milano Premuda", role: "operator" },
   { id: 131, name: "FDV Milano Porta Venezia", email: "milano.portavenezia@fradiavolopizzeria.com", password: "portavenezia2025", puntoVendita: "FDV Milano Porta Venezia", role: "operator" },
-
-  // TORINO
   { id: 114, name: "FDV Torino Carlina", email: "torino.carlina@fradiavolopizzeria.com", password: "carlina2025", puntoVendita: "FDV Torino Carlina", role: "operator" },
   { id: 117, name: "FDV Torino GM", email: "torino.gm@fradiavolopizzeria.com", password: "gm2025", puntoVendita: "FDV Torino GM", role: "operator" },
   { id: 123, name: "FDV Torino IV Marzo", email: "torino.ivmarzo@fradiavolopizzeria.com", password: "ivmarzo2025", puntoVendita: "FDV Torino IV Marzo", role: "operator" },
   { id: 130, name: "FDV Torino Vanchiglia", email: "torino.vanchiglia@fradiavolopizzeria.com", password: "vanchiglia2025", puntoVendita: "FDV Torino Vanchiglia", role: "operator" },
   { id: 136, name: "FDV Torino San Salvario", email: "torino.sansalvario@fradiavolopizzeria.com", password: "sansalvario2025", puntoVendita: "FDV Torino San Salvario", role: "operator" },
-
-  // ROMA
   { id: 107, name: "FDV Roma Parioli", email: "roma.parioli@fradiavolopizzeria.com", password: "parioli2025", puntoVendita: "FDV Roma Parioli", role: "operator" },
   { id: 133, name: "FDV Roma Ostiense", email: "roma.ostiense@fradiavolopizzeria.com", password: "ostiense2025", puntoVendita: "FDV Roma Ostiense", role: "operator" },
   { id: 138, name: "FDV Roma Trastevere", email: "roma.trastevere@fradiavolopizzeria.com", password: "trastevere2025", puntoVendita: "FDV Roma Trastevere", role: "operator" },
-
-  // EMILIA ROMAGNA
   { id: 106, name: "FDV Bologna S.Stefano", email: "bologna.stefano@fradiavolopizzeria.com", password: "stefano2025", puntoVendita: "FDV Bologna S.Stefano", role: "operator" },
   { id: 124, name: "FDV Parma", email: "parma@fradiavolopizzeria.com", password: "parma2025", puntoVendita: "FDV Parma", role: "operator" },
   { id: 132, name: "FDV Modena", email: "modena@fradiavolopizzeria.com", password: "modena2025", puntoVendita: "FDV Modena", role: "operator" },
   { id: 137, name: "FDV Rimini", email: "rimini@fradiavolopizzeria.com", password: "rimini2025", puntoVendita: "FDV Rimini", role: "operator" },
-
-  // LOMBARDIA
   { id: 122, name: "FDV Arese", email: "arese@fradiavolopizzeria.com", password: "arese2025", puntoVendita: "FDV Arese", role: "operator" },
   { id: 126, name: "FDV Monza", email: "monza@fradiavolopizzeria.com", password: "monza2025", puntoVendita: "FDV Monza", role: "operator" },
   { id: 135, name: "FDV Brescia Centro", email: "brescia.centro@fradiavolopizzeria.com", password: "brescia2025", puntoVendita: "FDV Brescia Centro", role: "operator" },
-
-  // PIEMONTE
   { id: 112, name: "FDV Novara", email: "novara@fradiavolopizzeria.com", password: "novara2025", puntoVendita: "FDV Novara", role: "operator" },
   { id: 129, name: "FDV Alessandria", email: "alessandria@fradiavolopizzeria.com", password: "alessandria2025", puntoVendita: "FDV Alessandria", role: "operator" },
   { id: 134, name: "FDV Asti", email: "asti@fradiavolopizzeria.com", password: "asti2025", puntoVendita: "FDV Asti", role: "operator" },
-
-  // ALTRE REGIONI
   { id: 119, name: "FDV Varese", email: "varese@fradiavolopizzeria.com", password: "varese2025", puntoVendita: "FDV Varese", role: "operator" }
 ];
 
@@ -298,10 +279,10 @@ const loadAllSheetData = async () => {
       note: row.get('note') || '',
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
-      testo_ddt: row.get('testo_ddt') || ''
+      testo_ddt: row.get('testo_ddt') || '',
+      item_noconv: row.get('item_noconv') || '' // ✅ COLONNA O
     }));
 
-    // Rimuovi duplicati su id
     const uniqueData = data.filter((invoice, index, self) =>
       index === self.findIndex(i => i.id === invoice.id)
     );
@@ -331,7 +312,8 @@ const loadSheetData = async (puntoVendita) => {
       note: row.get('note') || '',
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
-      testo_ddt: row.get('testo_ddt') || ''
+      testo_ddt: row.get('testo_ddt') || '',
+      item_noconv: row.get('item_noconv') || '' // ✅ COLONNA O
     }));
 
     if (puntoVendita) {
@@ -375,9 +357,6 @@ const loadAllMovimentazioniData = async () => {
   }
 };
 
-// ==========================================
-// MOVIMENTAZIONI: CARICAMENTO PER PUNTO VENDITA
-// ==========================================
 const loadMovimentazioniFromSheet = async (puntoVendita) => {
   try {
     console.log('📦 Caricamento movimentazioni per:', puntoVendita);
@@ -428,9 +407,6 @@ const loadMovimentazioniFromSheet = async (puntoVendita) => {
   }
 };
 
-// ==========================================
-// CARICAMENTO PRODOTTI DA SHEET
-// ==========================================
 const loadProdottiFromSheet = async () => {
   try {
     console.log('📦 Caricando prodotti da database Google Sheets...');
@@ -479,9 +455,6 @@ const loadProdottiFromSheet = async () => {
   }
 };
 
-// ==========================================
-// UPDATE RIGA FATTURA + GENERAZIONE TXT
-// ==========================================
 const updateSheetRow = async (id, updates) => {
   try {
     console.log('🔄 updateSheetRow chiamata con:', { id, updates });
@@ -495,7 +468,6 @@ const updateSheetRow = async (id, updates) => {
       throw new Error('Fattura non trovata');
     }
 
-    // snapshot prima dell’update per generare TXT
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -512,7 +484,6 @@ const updateSheetRow = async (id, updates) => {
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
     await row.save();
 
-    // genera TXT se passa a consegnato
     if (updates.stato === 'consegnato') {
       try {
         const txtResult = await generateTxtFile(invoiceDataForTxt);
@@ -530,9 +501,6 @@ const updateSheetRow = async (id, updates) => {
   }
 };
 
-// ==========================================
-// GENERA FATTURA DA MOVIMENTAZIONE
-// ==========================================
 const generateInvoiceFromMovimentazione = async (movimentazioneData) => {
   try {
     console.log('📄 Generando fattura automatica da movimentazione:', movimentazioneData);
@@ -554,21 +522,21 @@ const generateInvoiceFromMovimentazione = async (movimentazioneData) => {
 
     const txtContent = movimentazioneData.txt_content || '';
 
-    // 🔧 FIX: includi id e altri campi usati altrove
     const fatturaData = {
       id: uniqueId,
       numero: numeroFattura,
-      fornitore: movimentazioneData.origine,                // uscita
+      fornitore: movimentazioneData.origine,
       data_emissione: movimentazioneData.data_movimento,
       data_consegna: '',
       stato: 'pending',
-      punto_vendita: movimentazioneData.destinazione,       // entrata
+      punto_vendita: movimentazioneData.destinazione,
       confermato_da: '',
       pdf_link: '#',
       importo_totale: '0.00',
       note: `Fattura automatica da movimentazione: ${movimentazioneData.prodotto} (${movimentazioneData.quantita} ${movimentazioneData.unita_misura})`,
       txt: txtContent,
-      codice_fornitore: movimentazioneData.codice_origine || 'TRANSFER'
+      codice_fornitore: movimentazioneData.codice_origine || 'TRANSFER',
+      item_noconv: '' // ✅ COLONNA O vuota per default
     };
 
     await sheet.addRow(fatturaData);
@@ -597,7 +565,6 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
     const user = users.find(u => u.email === email);
     if (!user) return res.status(401).json({ error: 'Credenziali non valide' });
 
-    // POC: confronto in chiaro
     const isValidPassword = password === user.password;
     if (!isValidPassword) return res.status(401).json({ error: 'Credenziali non valide' });
 
@@ -759,7 +726,6 @@ const saveMovimentazioniToSheet = async (movimenti, origine) => {
 
     await sheet.addRows(righe);
 
-    // Genera fatture automatiche
     const fattureGenerate = [];
     for (let i = 0; i < righe.length; i++) {
       const fatturaResult = await generateInvoiceFromMovimentazione(righe[i]);
@@ -805,7 +771,6 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
       return res.status(403).json({ error: 'Non autorizzato per questo punto vendita' });
     }
 
-    // Se admin e creato_da_email fornito, trova utente e aggiorna origine/creato_da
     let customOrigin = origine;
     let customCreatoDa = req.user.email;
     if (req.user.role === 'admin' && creato_da_email && validateEmail(creato_da_email)) {
@@ -816,7 +781,6 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
       }
     }
 
-    // Elabora + sanitizza
     for (let i = 0; i < movimenti.length; i++) {
       const movimento = movimenti[i];
 
@@ -887,7 +851,7 @@ app.get('/api/prodotti', authenticateToken, async (req, res) => {
     let data = filtered;
     let nextPage = null;
 
-    const perPageNum = Math.max(parseInt(per_page || '0', 10), 0); // 0 = no paginazione
+    const perPageNum = Math.max(parseInt(per_page || '0', 10), 0);
     const pageNum = Math.max(parseInt(page || '1', 10), 1);
 
     if (perPageNum > 0) {
@@ -935,7 +899,6 @@ app.get('/api/admin/dashboard', authenticateToken, requireAdmin, async (req, res
       invoices: {
         total: invoices.length,
         consegnate: invoices.filter(inv => inv.stato === 'consegnato').length,
-        // 🔧 FIX: pending coerente con il resto dell'app (non "in_consegna")
         pending: invoices.filter(inv => inv.stato === 'pending').length,
         byStore: {},
         byStatus: {},
@@ -1158,52 +1121,99 @@ app.get('/api/txt-files/:filename', authenticateToken, async (req, res) => {
   }
 });
 
+// ==========================================
+// ✅ ENDPOINT AGGIORNATO CON COLONNA O (item_noconv)
+// ==========================================
 app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) => {
   try {
     const { filename } = req.params;
+    
+    // Validazione nome file
     if (!filename.endsWith('.txt') || filename.includes('..') || filename.includes('/')) {
       return res.status(400).json({ error: 'Nome file non valido' });
     }
-    const filePath = path.join(TXT_FILES_DIR, filename);
-    await fs.access(filePath);
-    const fileContent = await fs.readFile(filePath, 'utf8');
-
-    const hasErrors = filename.includes('_ERRORI');
     
-    let errorDetails = null;
-    if (hasErrors) {
-      try {
-        const parts = filename.replace('_ERRORI.txt', '').split('_');
-        const numeroDoc = parts[0];
-        const allInvoices = await loadAllSheetData();
-        const relatedInvoice = allInvoices.find(inv => 
-          inv.numero === numeroDoc && inv.note && inv.note.trim() !== ''
-        );
-        
-        if (relatedInvoice) {
-          errorDetails = {
-            note_errori: relatedInvoice.note,
-            data_consegna: relatedInvoice.data_consegna,
-            confermato_da: relatedInvoice.confermato_da,
-            fornitore: relatedInvoice.fornitore,
-            numero: relatedInvoice.numero
-          };
-        }
-      } catch (searchError) {
-        console.warn('Impossibile trovare dettagli errore per:', filename);
-      }
-    }
-
-    res.json({ 
-      success: true, 
-      filename, 
-      content: fileContent, 
+    const filePath = path.join(TXT_FILES_DIR, filename);
+    
+    // Verifica esistenza file
+    await fs.access(filePath);
+    
+    // Leggi contenuto file TXT
+    const fileContent = await fs.readFile(filePath, 'utf8');
+    
+    // Verifica se ha suffisso _ERRORI
+    const hasErrorSuffix = filename.includes('_ERRORI');
+    
+    // Inizializza risposta
+    const response = {
+      success: true,
+      filename,
+      content: fileContent,
       size: fileContent.length,
-      hasErrors,
-      errorDetails 
-    });
+      hasErrors: hasErrorSuffix,
+      errorDetails: null
+    };
+    
+    // Estrai numero documento dal filename per cercare nel database
+    // Formato: NUMEROFATTURA_DATA_FORNITORE_CODICEPV.txt o NUMEROFATTURA_DATA_FORNITORE_CODICEPV_ERRORI.txt
+    const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
+    const parts = cleanFilename.split('_');
+    const numeroDocumento = parts[0]; // Primo elemento = numero documento
+    
+    console.log(`📄 Ricerca errori nel database per: ${numeroDocumento}`);
+    
+    // Cerca la fattura nel database
+    try {
+      const allInvoices = await loadAllSheetData();
+      const relatedInvoice = allInvoices.find(inv => 
+        inv.numero === numeroDocumento
+      );
+      
+      if (relatedInvoice) {
+        console.log(`✅ Fattura trovata nel database: ${relatedInvoice.numero}`);
+        
+        // Inizializza errorDetails
+        const errorDetails = {};
+        
+        // ERRORE SEGNALATO IN CONSEGNA (colonna "note")
+        if (relatedInvoice.note && relatedInvoice.note.trim() !== '') {
+          errorDetails.note_errori = relatedInvoice.note.trim();
+          console.log(`⚠️ Errore consegna trovato: ${errorDetails.note_errori}`);
+        }
+        
+        // ✅ ERRORE DI CONVERSIONE (colonna O - "item_noconv")
+        if (relatedInvoice.item_noconv && relatedInvoice.item_noconv.trim() !== '') {
+          errorDetails.item_noconv = relatedInvoice.item_noconv.trim();
+          console.log(`⚠️ Errore conversione trovato: ${errorDetails.item_noconv}`);
+        }
+        
+        // Aggiungi altri dettagli utili
+        if (Object.keys(errorDetails).length > 0) {
+          errorDetails.data_consegna = relatedInvoice.data_consegna;
+          errorDetails.confermato_da = relatedInvoice.confermato_da;
+          errorDetails.fornitore = relatedInvoice.fornitore;
+          errorDetails.numero = relatedInvoice.numero;
+          errorDetails.punto_vendita = relatedInvoice.punto_vendita;
+          
+          response.errorDetails = errorDetails;
+          response.hasErrors = true;
+          
+          console.log(`✅ Dettagli errore completi:`, errorDetails);
+        }
+      } else {
+        console.log(`⚠️ Fattura non trovata nel database per numero: ${numeroDocumento}`);
+      }
+    } catch (searchError) {
+      console.error('❌ Errore ricerca fattura nel database:', searchError);
+      // Non bloccare la risposta, continua comunque
+    }
+    
+    res.json(response);
+    
   } catch (error) {
-    if (error.code === 'ENOENT') return res.status(404).json({ error: 'File non trovato' });
+    if (error.code === 'ENOENT') {
+      return res.status(404).json({ error: 'File non trovato' });
+    }
     console.error('❌ Errore lettura contenuto file TXT:', error);
     res.status(500).json({ error: 'Impossibile leggere il contenuto del file TXT' });
   }
@@ -1256,7 +1266,6 @@ app.delete('/api/txt-files/:filename', authenticateToken, async (req, res) => {
   }
 });
 
-// Scarica come ZIP tutti i file di una data
 app.get('/api/txt-files/download-by-date/:date', authenticateToken, async (req, res) => {
   try {
     const { date } = req.params;
@@ -1302,7 +1311,6 @@ app.get('/api/txt-files/download-by-date/:date', authenticateToken, async (req, 
   }
 });
 
-// Statistiche per data
 app.get('/api/txt-files/stats-by-date', authenticateToken, async (req, res) => {
   try {
     const allFiles = await fs.readdir(TXT_FILES_DIR);
@@ -1343,7 +1351,9 @@ app.get('/api/txt-files/stats-by-date', authenticateToken, async (req, res) => {
   }
 });
 
-// Health check
+// ==========================================
+// HEALTH & INFO
+// ==========================================
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -1354,7 +1364,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Info sistema
 app.get('/api/info', authenticateToken, (req, res) => {
   res.json({
     success: true,
