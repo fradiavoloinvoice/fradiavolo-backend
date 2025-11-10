@@ -1183,8 +1183,7 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
       hasErrors: hasErrorSuffix,
       errorDetails: null
     };
-
-   const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
+const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
 const parts = cleanFilename.split('_');
 
 // Gestisce formati come: "20936_00_2025-11-09_..." → "20936/00"
@@ -1197,8 +1196,13 @@ if (parts.length > 1 && parts[1] && /^\d+$/.test(parts[1])) {
 
 console.log(`📄 Ricerca errori nel database per: ${numeroDocumento}`);
 
-      if (relatedInvoice) {
-        console.log(`✅ Fattura trovata nel database: ${relatedInvoice.numero}`);
+try {
+  const allInvoices = await loadAllSheetData();
+  const relatedInvoice = allInvoices.find(inv => inv.numero === numeroDocumento);
+
+  if (relatedInvoice) {
+    console.log(`✅ Fattura trovata nel database: ${relatedInvoice.numero}`);
+   
         const errorDetails = {};
 
         if (relatedInvoice.note && relatedInvoice.note.trim() !== '') {
