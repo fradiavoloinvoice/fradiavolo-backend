@@ -209,35 +209,240 @@ const generateTxtFile = async (invoiceData) => {
 // DATABASE UTENTI (mock POC)
 // ==========================================
 const users = [
-  { id: 1, name: "FDV Office", email: "office@fradiavolopizzeria.com", password: "fdv2025", puntoVendita: "FDV Office", role: "admin" },
-  { id: 999, name: "Admin Fradiavolo", email: "admin@fradiavolopizzeria.com", password: "admin2025", puntoVendita: "ADMIN_GLOBAL", role: "admin", permissions: ["view_all","edit_all","manage_users","analytics","reports","system_config"], storeAccess: 'global' },
-  { id: 101, name: "FDV Genova Castello", email: "genova.castello@fradiavolopizzeria.com", password: "castello2025", puntoVendita: "FDV Genova Castello", role: "operator" },
-  { id: 128, name: "FDV Genova Mare", email: "genova.mare@fradiavolopizzeria.com", password: "mare2025", puntoVendita: "FDV Genova Mare", role: "operator" },
-  { id: 113, name: "FDV Milano Sempione", email: "milano.sempione@fradiavolopizzeria.com", password: "sempione2025", puntoVendita: "FDV Milano Sempione", role: "operator" },
-  { id: 120, name: "FDV Milano Isola", email: "milano.isola@fradiavolopizzeria.com", password: "isola2025", puntoVendita: "FDV Milano Isola", role: "operator" },
-  { id: 121, name: "FDV Milano Citylife", email: "milano.citylife@fradiavolopizzeria.com", password: "citylife2025", puntoVendita: "FDV Milano Citylife", role: "operator" },
-  { id: 125, name: "FDV Milano Bicocca", email: "milano.bicocca@fradiavolopizzeria.com", password: "bicocca2025", puntoVendita: "FDV Milano Bicocca", role: "operator" },
-  { id: 127, name: "FDV Milano Premuda", email: "milano.premuda@fradiavolopizzeria.com", password: "premuda2025", puntoVendita: "FDV Milano Premuda", role: "operator" },
-  { id: 131, name: "FDV Milano Porta Venezia", email: "milano.portavenezia@fradiavolopizzeria.com", password: "portavenezia2025", puntoVendita: "FDV Milano Porta Venezia", role: "operator" },
-  { id: 114, name: "FDV Torino Carlina", email: "torino.carlina@fradiavolopizzeria.com", password: "carlina2025", puntoVendita: "FDV Torino Carlina", role: "operator" },
-  { id: 117, name: "FDV Torino GM", email: "torino.gm@fradiavolopizzeria.com", password: "gm2025", puntoVendita: "FDV Torino GM", role: "operator" },
-  { id: 123, name: "FDV Torino IV Marzo", email: "torino.ivmarzo@fradiavolopizzeria.com", password: "ivmarzo2025", puntoVendita: "FDV Torino IV Marzo", role: "operator" },
-  { id: 130, name: "FDV Torino Vanchiglia", email: "torino.vanchiglia@fradiavolopizzeria.com", password: "vanchiglia2025", puntoVendita: "FDV Torino Vanchiglia", role: "operator" },
-  { id: 136, name: "FDV Torino San Salvario", email: "torino.sansalvario@fradiavolopizzeria.com", password: "sansalvario2025", puntoVendita: "FDV Torino San Salvario", role: "operator" },
-  { id: 107, name: "FDV Roma Parioli", email: "roma.parioli@fradiavolopizzeria.com", password: "parioli2025", puntoVendita: "FDV Roma Parioli", role: "operator" },
-  { id: 133, name: "FDV Roma Ostiense", email: "roma.ostiense@fradiavolopizzeria.com", password: "ostiense2025", puntoVendita: "FDV Roma Ostiense", role: "operator" },
-  { id: 138, name: "FDV Roma Trastevere", email: "roma.trastevere@fradiavolopizzeria.com", password: "trastevere2025", puntoVendita: "FDV Roma Trastevere", role: "operator" },
-  { id: 106, name: "FDV Bologna S.Stefano", email: "bologna.stefano@fradiavolopizzeria.com", password: "stefano2025", puntoVendita: "FDV Bologna S.Stefano", role: "operator" },
-  { id: 124, name: "FDV Parma", email: "parma@fradiavolopizzeria.com", password: "parma2025", puntoVendita: "FDV Parma", role: "operator" },
-  { id: 132, name: "FDV Modena", email: "modena@fradiavolopizzeria.com", password: "modena2025", puntoVendita: "FDV Modena", role: "operator" },
-  { id: 137, name: "FDV Rimini", email: "rimini@fradiavolopizzeria.com", password: "rimini2025", puntoVendita: "FDV Rimini", role: "operator" },
-  { id: 122, name: "FDV Arese", email: "arese@fradiavolopizzeria.com", password: "arese2025", puntoVendita: "FDV Arese", role: "operator" },
-  { id: 126, name: "FDV Monza", email: "monza@fradiavolopizzeria.com", password: "monza2025", puntoVendita: "FDV Monza", role: "operator" },
-  { id: 135, name: "FDV Brescia Centro", email: "brescia.centro@fradiavolopizzeria.com", password: "brescia2025", puntoVendita: "FDV Brescia Centro", role: "operator" },
-  { id: 112, name: "FDV Novara", email: "novara@fradiavolopizzeria.com", password: "novara2025", puntoVendita: "FDV Novara", role: "operator" },
-  { id: 129, name: "FDV Alessandria", email: "alessandria@fradiavolopizzeria.com", password: "alessandria2025", puntoVendita: "FDV Alessandria", role: "operator" },
-  { id: 134, name: "FDV Asti", email: "asti@fradiavolopizzeria.com", password: "asti2025", puntoVendita: "FDV Asti", role: "operator" },
-  { id: 119, name: "FDV Varese", email: "varese@fradiavolopizzeria.com", password: "varese2025", puntoVendita: "FDV Varese", role: "operator" }
+  { 
+    id: 1, 
+    name: "FDV Office", 
+    email: process.env.USER_OFFICE_EMAIL, 
+    password: process.env.USER_OFFICE_PASSWORD, 
+    puntoVendita: "FDV Office", 
+    role: "admin" 
+  },
+  { 
+    id: 999, 
+    name: "Admin Fradiavolo", 
+    email: process.env.USER_ADMIN_EMAIL, 
+    password: process.env.USER_ADMIN_PASSWORD, 
+    puntoVendita: "ADMIN_GLOBAL", 
+    role: "admin", 
+    permissions: ["view_all","edit_all","manage_users","analytics","reports","system_config"], 
+    storeAccess: 'global' 
+  },
+  { 
+    id: 101, 
+    name: "FDV Genova Castello", 
+    email: process.env.USER_GENOVA_CASTELLO_EMAIL, 
+    password: process.env.USER_GENOVA_CASTELLO_PASSWORD, 
+    puntoVendita: "FDV Genova Castello", 
+    role: "operator" 
+  },
+  { 
+    id: 128, 
+    name: "FDV Genova Mare", 
+    email: process.env.USER_GENOVA_MARE_EMAIL, 
+    password: process.env.USER_GENOVA_MARE_PASSWORD, 
+    puntoVendita: "FDV Genova Mare", 
+    role: "operator" 
+  },
+  { 
+    id: 113, 
+    name: "FDV Milano Sempione", 
+    email: process.env.USER_MILANO_SEMPIONE_EMAIL, 
+    password: process.env.USER_MILANO_SEMPIONE_PASSWORD, 
+    puntoVendita: "FDV Milano Sempione", 
+    role: "operator" 
+  },
+  { 
+    id: 120, 
+    name: "FDV Milano Isola", 
+    email: process.env.USER_MILANO_ISOLA_EMAIL, 
+    password: process.env.USER_MILANO_ISOLA_PASSWORD, 
+    puntoVendita: "FDV Milano Isola", 
+    role: "operator" 
+  },
+  { 
+    id: 121, 
+    name: "FDV Milano Citylife", 
+    email: process.env.USER_MILANO_CITYLIFE_EMAIL, 
+    password: process.env.USER_MILANO_CITYLIFE_PASSWORD, 
+    puntoVendita: "FDV Milano Citylife", 
+    role: "operator" 
+  },
+  { 
+    id: 125, 
+    name: "FDV Milano Bicocca", 
+    email: process.env.USER_MILANO_BICOCCA_EMAIL, 
+    password: process.env.USER_MILANO_BICOCCA_PASSWORD, 
+    puntoVendita: "FDV Milano Bicocca", 
+    role: "operator" 
+  },
+  { 
+    id: 127, 
+    name: "FDV Milano Premuda", 
+    email: process.env.USER_MILANO_PREMUDA_EMAIL, 
+    password: process.env.USER_MILANO_PREMUDA_PASSWORD, 
+    puntoVendita: "FDV Milano Premuda", 
+    role: "operator" 
+  },
+  { 
+    id: 131, 
+    name: "FDV Milano Porta Venezia", 
+    email: process.env.USER_MILANO_PORTAVENEZIA_EMAIL, 
+    password: process.env.USER_MILANO_PORTAVENEZIA_PASSWORD, 
+    puntoVendita: "FDV Milano Porta Venezia", 
+    role: "operator" 
+  },
+  { 
+    id: 114, 
+    name: "FDV Torino Carlina", 
+    email: process.env.USER_TORINO_CARLINA_EMAIL, 
+    password: process.env.USER_TORINO_CARLINA_PASSWORD, 
+    puntoVendita: "FDV Torino Carlina", 
+    role: "operator" 
+  },
+  { 
+    id: 117, 
+    name: "FDV Torino GM", 
+    email: process.env.USER_TORINO_GM_EMAIL, 
+    password: process.env.USER_TORINO_GM_PASSWORD, 
+    puntoVendita: "FDV Torino GM", 
+    role: "operator" 
+  },
+  { 
+    id: 123, 
+    name: "FDV Torino IV Marzo", 
+    email: process.env.USER_TORINO_IVMARZO_EMAIL, 
+    password: process.env.USER_TORINO_IVMARZO_PASSWORD, 
+    puntoVendita: "FDV Torino IV Marzo", 
+    role: "operator" 
+  },
+  { 
+    id: 130, 
+    name: "FDV Torino Vanchiglia", 
+    email: process.env.USER_TORINO_VANCHIGLIA_EMAIL, 
+    password: process.env.USER_TORINO_VANCHIGLIA_PASSWORD, 
+    puntoVendita: "FDV Torino Vanchiglia", 
+    role: "operator" 
+  },
+  { 
+    id: 136, 
+    name: "FDV Torino San Salvario", 
+    email: process.env.USER_TORINO_SANSALVARIO_EMAIL, 
+    password: process.env.USER_TORINO_SANSALVARIO_PASSWORD, 
+    puntoVendita: "FDV Torino San Salvario", 
+    role: "operator" 
+  },
+  { 
+    id: 107, 
+    name: "FDV Roma Parioli", 
+    email: process.env.USER_ROMA_PARIOLI_EMAIL, 
+    password: process.env.USER_ROMA_PARIOLI_PASSWORD, 
+    puntoVendita: "FDV Roma Parioli", 
+    role: "operator" 
+  },
+  { 
+    id: 133, 
+    name: "FDV Roma Ostiense", 
+    email: process.env.USER_ROMA_OSTIENSE_EMAIL, 
+    password: process.env.USER_ROMA_OSTIENSE_PASSWORD, 
+    puntoVendita: "FDV Roma Ostiense", 
+    role: "operator" 
+  },
+  { 
+    id: 138, 
+    name: "FDV Roma Trastevere", 
+    email: process.env.USER_ROMA_TRASTEVERE_EMAIL, 
+    password: process.env.USER_ROMA_TRASTEVERE_PASSWORD, 
+    puntoVendita: "FDV Roma Trastevere", 
+    role: "operator" 
+  },
+  { 
+    id: 106, 
+    name: "FDV Bologna S.Stefano", 
+    email: process.env.USER_BOLOGNA_STEFANO_EMAIL, 
+    password: process.env.USER_BOLOGNA_STEFANO_PASSWORD, 
+    puntoVendita: "FDV Bologna S.Stefano", 
+    role: "operator" 
+  },
+  { 
+    id: 124, 
+    name: "FDV Parma", 
+    email: process.env.USER_PARMA_EMAIL, 
+    password: process.env.USER_PARMA_PASSWORD, 
+    puntoVendita: "FDV Parma", 
+    role: "operator" 
+  },
+  { 
+    id: 132, 
+    name: "FDV Modena", 
+    email: process.env.USER_MODENA_EMAIL, 
+    password: process.env.USER_MODENA_PASSWORD, 
+    puntoVendita: "FDV Modena", 
+    role: "operator" 
+  },
+  { 
+    id: 137, 
+    name: "FDV Rimini", 
+    email: process.env.USER_RIMINI_EMAIL, 
+    password: process.env.USER_RIMINI_PASSWORD, 
+    puntoVendita: "FDV Rimini", 
+    role: "operator" 
+  },
+  { 
+    id: 122, 
+    name: "FDV Arese", 
+    email: process.env.USER_ARESE_EMAIL, 
+    password: process.env.USER_ARESE_PASSWORD, 
+    puntoVendita: "FDV Arese", 
+    role: "operator" 
+  },
+  { 
+    id: 126, 
+    name: "FDV Monza", 
+    email: process.env.USER_MONZA_EMAIL, 
+    password: process.env.USER_MONZA_PASSWORD, 
+    puntoVendita: "FDV Monza", 
+    role: "operator" 
+  },
+  { 
+    id: 135, 
+    name: "FDV Brescia Centro", 
+    email: process.env.USER_BRESCIA_EMAIL, 
+    password: process.env.USER_BRESCIA_PASSWORD, 
+    puntoVendita: "FDV Brescia Centro", 
+    role: "operator" 
+  },
+  { 
+    id: 112, 
+    name: "FDV Novara", 
+    email: process.env.USER_NOVARA_EMAIL, 
+    password: process.env.USER_NOVARA_PASSWORD, 
+    puntoVendita: "FDV Novara", 
+    role: "operator" 
+  },
+  { 
+    id: 129, 
+    name: "FDV Alessandria", 
+    email: process.env.USER_ALESSANDRIA_EMAIL, 
+    password: process.env.USER_ALESSANDRIA_PASSWORD, 
+    puntoVendita: "FDV Alessandria", 
+    role: "operator" 
+  },
+  { 
+    id: 134, 
+    name: "FDV Asti", 
+    email: process.env.USER_ASTI_EMAIL, 
+    password: process.env.USER_ASTI_PASSWORD, 
+    puntoVendita: "FDV Asti", 
+    role: "operator" 
+  },
+  { 
+    id: 119, 
+    name: "FDV Varese", 
+    email: process.env.USER_VARESE_EMAIL, 
+    password: process.env.USER_VARESE_PASSWORD, 
+    puntoVendita: "FDV Varese", 
+    role: "operator" 
+  }
 ];
 
 console.log('👥 Utenti disponibili:', users.length);
