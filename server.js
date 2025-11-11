@@ -177,10 +177,14 @@ const generateTxtFile = async (invoiceData) => {
     const nomeFornitorePulito = cleanForFilename(nomeFornitore);
     const codicePVPulito = cleanForFilename(codicePV);
 
-    // _ERRORI se ci sono note o item non convertiti
-    const hasErrors =
-      (noteErrori && noteErrori.trim() !== '') ||
-      (itemNoConv && itemNoConv.trim() !== '');
+    // ✅ FIX: Controllo corretto degli errori
+    // Un file ha errori SOLO se:
+    // 1. La colonna "note" contiene testo NON vuoto, OPPURE
+    // 2. La colonna "item_noconv" contiene testo NON vuoto
+    const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
+    const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
+    const hasErrors = hasNoteErrors || hasConversionErrors;
+    
     const errorSuffix = hasErrors ? '_ERRORI' : '';
 
     const fileName = `${numeroDocPulito}_${dataFormatted}_${nomeFornitorePulito}_${codicePVPulito}${errorSuffix}.txt`;
@@ -188,9 +192,13 @@ const generateTxtFile = async (invoiceData) => {
 
     await fs.writeFile(filePath, contenutoTxt, 'utf8');
 
-    console.log(hasErrors
-      ? `⚠️ File TXT CON ERRORI generato: ${fileName}`
-      : `✅ File TXT generato con successo: ${fileName}`);
+    if (hasErrors) {
+      console.log(`⚠️ File TXT CON ERRORI generato: ${fileName}`);
+      if (hasNoteErrors) console.log(`   → Errore consegna: ${noteErrori}`);
+      if (hasConversionErrors) console.log(`   → Errore conversione: ${itemNoConv}`);
+    } else {
+      console.log(`✅ File TXT generato con successo: ${fileName}`);
+    }
 
     return {
       fileName,
