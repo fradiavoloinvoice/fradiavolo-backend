@@ -1396,54 +1396,102 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
       hasErrors: hasErrorSuffix,
       errorDetails: null
     };
-const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
-const parts = cleanFilename.split('_');
 
-// Gestisce formati come: "20936_00_2025-11-09_..." → "20936/00"
-// oppure "5011_2025_2025-11-09_..." → "5011/2025"
-let numeroDocumento = parts[0];
-if (parts.length > 1 && parts[1] && /^\d+$/.test(parts[1])) {
-  // Se la seconda parte è un numero, probabilmente è parte del numero documento
-  numeroDocumento = `${parts[0]}/${parts[1]}`;
-}
+    // ✅ ESTRAZIONE NUMERO DOCUMENTO
+    const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
+    const parts = cleanFilename.split('_');
 
-console.log(`📄 Ricerca errori nel database per: ${numeroDocumento}`);
+    console.log(`\n🔍 DEBUG ESTRAZIONE NUMERO DOCUMENTO:`);
+    console.log(`   Filename originale: ${filename}`);
+    console.log(`   Filename pulito: ${cleanFilename}`);
+    console.log(`   Parts array:`, parts);
 
-try {
-  const allInvoices = await loadAllSheetData();
-  const relatedInvoice = allInvoices.find(inv => inv.numero === numeroDocumento);
+    // Il numero documento è SEMPRE la prima parte
+    let numeroDocumento = parts[0];
 
-  if (relatedInvoice) {
-    console.log(`✅ Fattura trovata nel database: ${relatedInvoice.numero}`);
-   
-        const errorDetails = {};
+    console.log(`   Numero documento estratto: ${numeroDocumento}`);
 
-        if (relatedInvoice.note && relatedInvoice.note.trim() !== '') {
-          errorDetails.note_errori = relatedInvoice.note.trim();
-          console.log(`⚠️ Errore consegna trovato: ${errorDetails.note_errori}`);
+    if (numeroDocumento) {
+      try {
+        const allInvoices = await loadAllSheetData();
+        
+        console.log(`\n📊 RICERCA NEL DATABASE:`);
+        console.log(`   Cerco fattura con numero: ${numeroDocumento}`);
+        console.log(`   Totale fatture nel database: ${allInvoices.length}`);
+
+        // Cerca la fattura
+        const relatedInvoice = allInvoices.find(inv => {
+          const invNumero = String(inv.numero || '').trim();
+          const searchNumero = String(numeroDocumento).trim();
+          
+          // Debug ogni confronto
+          const match = invNumero === searchNumero;
+          if (match) {
+            console.log(`   ✅ MATCH TROVATO!`);
+          }
+          return match;
+        });
+
+        if (relatedInvoice) {
+          console.log(`\n✅ FATTURA TROVATA:`);
+          console.log(`   Numero: ${relatedInvoice.numero}`);
+          console.log(`   Fornitore: ${relatedInvoice.fornitore}`);
+          console.log(`   Punto vendita: ${relatedInvoice.punto_vendita}`);
+          console.log(`   Stato: ${relatedInvoice.stato}`);
+          
+          const errorDetails = {};
+
+          // ✅ CONTROLLO ERRORE CONSEGNA (colonna K - "note")
+          const noteValue = String(relatedInvoice.note || '').trim();
+          console.log(`\n🔍 CONTROLLO ERRORI:`);
+          console.log(`   Colonna "note": "${noteValue}"`);
+          
+          if (noteValue !== '') {
+            errorDetails.note_errori = noteValue;
+            console.log(`   ⚠️ Errore consegna trovato!`);
+          } else {
+            console.log(`   ✅ Nessun errore consegna`);
+          }
+
+          // ✅ CONTROLLO ERRORE CONVERSIONE (colonna O - "item_noconv")
+          const itemNoConvValue = String(relatedInvoice.item_noconv || '').trim();
+          console.log(`   Colonna "item_noconv": "${itemNoConvValue}"`);
+
+          if (itemNoConvValue !== '') {
+            errorDetails.item_noconv = itemNoConvValue;
+            console.log(`   ⚠️ Errore conversione trovato!`);
+          } else {
+            console.log(`   ✅ Nessun errore conversione`);
+          }
+
+          // Se ci sono errori, aggiungi i dettagli completi
+          if (Object.keys(errorDetails).length > 0) {
+            errorDetails.data_consegna = relatedInvoice.data_consegna;
+            errorDetails.confermato_da = relatedInvoice.confermato_da;
+            errorDetails.fornitore = relatedInvoice.fornitore;
+            errorDetails.numero = relatedInvoice.numero;
+            errorDetails.punto_vendita = relatedInvoice.punto_vendita;
+
+            response.errorDetails = errorDetails;
+            response.hasErrors = true;
+            console.log(`\n✅ RISPOSTA FINALE: Errori presenti`);
+            console.log(`   errorDetails:`, errorDetails);
+          } else {
+            console.log(`\n⚠️ RISPOSTA FINALE: Nessun errore trovato nel database`);
+          }
+        } else {
+          console.log(`\n❌ FATTURA NON TROVATA`);
+          console.log(`   Numero cercato: ${numeroDocumento}`);
+          console.log(`   Prime 10 fatture nel database:`);
+          allInvoices.slice(0, 10).forEach(inv => {
+            console.log(`      - "${inv.numero}" (${inv.fornitore})`);
+          });
         }
-
-        if (relatedInvoice.item_noconv && relatedInvoice.item_noconv.trim() !== '') {
-          errorDetails.item_noconv = relatedInvoice.item_noconv.trim();
-          console.log(`⚠️ Errore conversione trovato: ${errorDetails.item_noconv}`);
-        }
-
-        if (Object.keys(errorDetails).length > 0) {
-          errorDetails.data_consegna = relatedInvoice.data_consegna;
-          errorDetails.confermato_da = relatedInvoice.confermato_da;
-          errorDetails.fornitore = relatedInvoice.fornitore;
-          errorDetails.numero = relatedInvoice.numero;
-          errorDetails.punto_vendita = relatedInvoice.punto_vendita;
-
-          response.errorDetails = errorDetails;
-          response.hasErrors = true;
-          console.log(`✅ Dettagli errore completi:`, errorDetails);
-        }
-      } else {
-        console.log(`⚠️ Fattura non trovata nel database per numero: ${numeroDocumento}`);
+      } catch (searchError) {
+        console.error('❌ Errore ricerca fattura nel database:', searchError);
       }
-    } catch (searchError) {
-      console.error('❌ Errore ricerca fattura nel database:', searchError);
+    } else {
+      console.log(`⚠️ Impossibile estrarre numero documento da: ${filename}`);
     }
 
     res.json(response);
