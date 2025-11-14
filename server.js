@@ -1,9 +1,9 @@
-// server.js - VERSIONE COMPLETA (fix: note errore, item_noconv, _ERRORI, alias sanitizeInput)
+// server.js - VERSIONE CON TRACKING MODIFICHE (colonna P: storico_modifiche)
 const express = require('express');
 const archiver = require('archiver');
 const cors = require('cors');
 const jwt = require('jsonwebtoken');
-const bcrypt = require('bcryptjs'); // (non usato, lasciato per compatibilità futura)
+const bcrypt = require('bcryptjs');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const rateLimit = require('express-rate-limit');
@@ -13,7 +13,6 @@ const path = require('path');
 const fs = require('fs').promises;
 require('dotenv').config();
 
-// Import dati negozi per codici/lookup
 const negozi = require('./data/negozi.json');
 
 const app = express();
@@ -29,7 +28,6 @@ try {
   }
 }
 
-// Stato credenziali
 const hasGoogleEmailEnv = Boolean(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL);
 const hasGoogleEmailLocal = Boolean(localServiceAccount?.client_email);
 const hasGoogleKeyEnv = Boolean(process.env.GOOGLE_PRIVATE_KEY);
@@ -38,9 +36,6 @@ const googleEmailSource = hasGoogleEmailEnv ? 'env' : hasGoogleEmailLocal ? 'loc
 const googleKeySource = hasGoogleKeyEnv ? 'env' : hasGoogleKeyLocal ? 'local file' : 'missing';
 const GOOGLE_SHEET_ID = process.env.GOOGLE_SHEET_ID;
 
-// ==========================================
-// LOG CONFIGURAZIONE STARTUP
-// ==========================================
 console.log('🔍 VERIFICA CONFIGURAZIONE STARTUP:');
 console.log('📊 PORT:', PORT);
 console.log('🔐 JWT_SECRET configurato:', !!process.env.JWT_SECRET);
@@ -48,9 +43,6 @@ console.log('📊 GOOGLE_SHEET_ID:', GOOGLE_SHEET_ID ? 'CONFIGURATO' : 'MANCANTE
 console.log('🤖 GOOGLE_SERVICE_ACCOUNT_EMAIL:', googleEmailSource === 'missing' ? 'MANCANTE' : `CONFIGURATO (${googleEmailSource})`);
 console.log('🔑 GOOGLE_PRIVATE_KEY:', googleKeySource === 'missing' ? 'MANCANTE' : `DISPONIBILE (${googleKeySource})`);
 
-// ==========================================
-// CARTELLA FILE TXT
-// ==========================================
 const TXT_FILES_DIR = path.join(__dirname, 'generated_txt_files');
 const ensureTxtDir = async () => {
   try { await fs.access(TXT_FILES_DIR); }
@@ -60,9 +52,6 @@ ensureTxtDir()
   .then(() => console.log('📁 Cartella file TXT pronta:', TXT_FILES_DIR))
   .catch(error => console.error('❌ Errore creazione cartella TXT:', error));
 
-// ==========================================
-// MIDDLEWARE DI SICUREZZA
-// ==========================================
 app.use(helmet());
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json({ limit: '10mb' }));
@@ -73,9 +62,6 @@ app.use(limiter);
 
 const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 5, message: 'Troppi tentativi di login. Riprova tra 15 minuti.' });
 
-// ==========================================
-// GOOGLE SHEETS
-// ==========================================
 const GOOGLE_SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || localServiceAccount?.client_email;
 const rawGooglePrivateKey = process.env.GOOGLE_PRIVATE_KEY || localServiceAccount?.private_key;
 const GOOGLE_PRIVATE_KEY = rawGooglePrivateKey ? rawGooglePrivateKey.replace(/\\n/g, '\n') : undefined;
@@ -110,12 +96,7 @@ const getGoogleSheet = async (sheetName = null) => {
   }
 };
 
-// ==========================================
-// SANIFICATORI (NO ESCAPE HTML)
-// ==========================================
-// ⚠️ Fix: NON usare validator.escape (converte / in &#x2F; e " in &quot;)
 const sanitizeText = (input) => {
-  // rimuove caratteri di controllo, normalizza spazi; NON tocca slash/virgolette
   return String(input ?? '')
     .replace(/[\u0000-\u001F\u007F]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -123,14 +104,9 @@ const sanitizeText = (input) => {
 };
 const sanitizeEmailSafe = (email) => String(email ?? '').trim();
 const sanitizeDateSafe = (dateString) => String(dateString ?? '').trim();
-// Consente cifre, lettere, slash, trattini, punti: es. 5011/2025, 12-AB/24
 const sanitizeDDT = (ddt) => String(ddt ?? '').trim().replace(/[^\w/.\-\/]/g, '');
-// Alias per compatibilità con vecchio codice che chiamava sanitizeInput
 const sanitizeInput = sanitizeText;
 
-// ==========================================
-// FUNZIONI DI VALIDAZIONE
-// ==========================================
 const validateEmail = (email) =>
   validator.isEmail(email) &&
   (email.includes('@fradiavolopizzeria.com') || email.includes('@azienda.it'));
@@ -139,11 +115,45 @@ const validateDate = (dateString) =>
   validator.isDate(dateString) && new Date(dateString) <= new Date();
 
 // ==========================================
+// ✅ NUOVA FUNZIONE: Parse storico modifiche
+// ==========================================
+const parseStoricoModifiche = (storicoString) => {
+  if (!storicoString || storicoString.trim() === '') return [];
+  
+  try {
+    const parsed = JSON.parse(storicoString);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    console.error('❌ Errore parsing storico modifiche:', error);
+    return [];
+  }
+};
+
+// ==========================================
+// ✅ NUOVA FUNZIONE: Salva modifica nello storico
+// ==========================================
+const aggiungiModificaAlloStorico = (storicoAttuale, campoModificato, valorePrecedente, valoreNuovo, modificatoDa) => {
+  const storico = parseStoricoModifiche(storicoAttuale);
+  
+  const nuovaModifica = {
+    timestamp: new Date().toISOString(),
+    campo: campoModificato,
+    valore_precedente: valorePrecedente || '',
+    valore_nuovo: valoreNuovo || '',
+    modificato_da: modificatoDa,
+    data_modifica: new Date().toLocaleDateString('it-IT')
+  };
+  
+  storico.push(nuovaModifica);
+  return JSON.stringify(storico);
+};
+
+// ==========================================
 // GENERAZIONE FILE TXT (per fatture consegnate)
 // ==========================================
-const generateTxtFile = async (invoiceData) => {
+const generateTxtFile = async (invoiceData, isModification = false) => {
   try {
-    console.log('📄 Generando file TXT per fattura:', invoiceData.id);
+    console.log('📄 Generando file TXT per fattura:', invoiceData.id, isModification ? '(MODIFICA)' : '(NUOVA)');
 
     const numeroDocumento = invoiceData.numero;
     const dataConsegna = invoiceData.data_consegna;
@@ -177,10 +187,6 @@ const generateTxtFile = async (invoiceData) => {
     const nomeFornitorePulito = cleanForFilename(nomeFornitore);
     const codicePVPulito = cleanForFilename(codicePV);
 
-    // ✅ FIX: Controllo corretto degli errori
-    // Un file ha errori SOLO se:
-    // 1. La colonna "note" contiene testo NON vuoto, OPPURE
-    // 2. La colonna "item_noconv" contiene testo NON vuoto
     const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
     const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
     const hasErrors = hasNoteErrors || hasConversionErrors;
@@ -200,12 +206,18 @@ const generateTxtFile = async (invoiceData) => {
       console.log(`✅ File TXT generato con successo: ${fileName}`);
     }
 
+    // ✅ NUOVO: Se è una modifica, logga
+    if (isModification) {
+      console.log(`🔄 File TXT rigenerato per modifica: ${fileName}`);
+    }
+
     return {
       fileName,
       filePath,
       size: contenutoTxt.length,
       hasErrors,
-      noteErrori: hasErrors ? (noteErrori || itemNoConv) : null
+      noteErrori: hasErrors ? (noteErrori || itemNoConv) : null,
+      isModification
     };
   } catch (error) {
     console.error('❌ Errore generazione file TXT:', error);
@@ -213,9 +225,6 @@ const generateTxtFile = async (invoiceData) => {
   }
 };
 
-// ==========================================
-// DATABASE UTENTI (mock POC)
-// ==========================================
 const users = [
   { 
     id: 1, 
@@ -456,9 +465,6 @@ const users = [
 console.log('👥 Utenti disponibili:', users.length);
 console.log('🏢 Punti vendita configurati:', [...new Set(users.map(u => u.puntoVendita))].length);
 
-// ==========================================
-// AUTH MIDDLEWARE
-// ==========================================
 const authenticateToken = (req, res, next) => {
   const token = (req.headers['authorization'] || '').split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Token di accesso richiesto' });
@@ -475,9 +481,6 @@ const requireAdmin = (req, res, next) => {
   next();
 };
 
-// ==========================================
-// SHEETS HELPERS (fatture)
-// ==========================================
 const loadAllSheetData = async () => {
   try {
     console.log('📊 Admin: Caricamento dati globali da Google Sheets');
@@ -499,7 +502,8 @@ const loadAllSheetData = async () => {
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
       testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || ''
+      item_noconv: row.get('item_noconv') || '',
+      storico_modifiche: row.get('storico_modifiche') || ''
     }));
 
     const uniqueData = data.filter((invoice, index, self) =>
@@ -532,7 +536,8 @@ const loadSheetData = async (puntoVendita) => {
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
       testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || ''
+      item_noconv: row.get('item_noconv') || '',
+      storico_modifiche: row.get('storico_modifiche') || ''
     }));
 
     if (puntoVendita) data = data.filter(r => r.punto_vendita === puntoVendita);
@@ -543,9 +548,6 @@ const loadSheetData = async (puntoVendita) => {
   }
 };
 
-// ==========================================
-// SHEETS HELPERS (movimentazioni)
-// ==========================================
 const loadAllMovimentazioniData = async () => {
   try {
     console.log('📦 Admin: Caricamento movimentazioni globali');
@@ -629,9 +631,6 @@ const loadMovimentazioniFromSheet = async (puntoVendita) => {
   }
 };
 
-// ==========================================
-// PRODOTTI (db esterno)
-// ==========================================
 const loadProdottiFromSheet = async () => {
   try {
     console.log('📦 Caricando prodotti da database Google Sheets...');
@@ -673,11 +672,11 @@ const loadProdottiFromSheet = async () => {
 };
 
 // ==========================================
-// UPDATE RIGA FATTURA (crea TXT alla consegna)
+// ✅ UPDATE RIGA FATTURA CON TRACKING MODIFICHE
 // ==========================================
-const updateSheetRow = async (id, updates) => {
+const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
   try {
-    console.log('🔄 updateSheetRow chiamata con:', { id, updates });
+    console.log('🔄 updateSheetRow chiamata con:', { id, updates, modificatoDa });
 
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
@@ -688,7 +687,42 @@ const updateSheetRow = async (id, updates) => {
       throw new Error('Fattura non trovata');
     }
 
-    // Dati completi per generare il TXT (dopo il salvataggio)
+    // ✅ Salva valori PRECEDENTI prima della modifica
+    const valoriPrecedenti = {
+      data_consegna: row.get('data_consegna') || '',
+      confermato_da: row.get('confermato_da') || '',
+      note: row.get('note') || '',
+      stato: row.get('stato') || ''
+    };
+
+    const storicoAttuale = row.get('storico_modifiche') || '';
+    let nuovoStorico = storicoAttuale;
+    let isModification = false;
+
+    // ✅ Traccia SOLO se la fattura è già consegnata E ci sono modifiche
+    const statoCorrente = row.get('stato');
+    if (statoCorrente === 'consegnato') {
+      // Controlla ogni campo modificato
+      Object.keys(updates).forEach(campo => {
+        const valorePrecedente = valoriPrecedenti[campo];
+        const valoreNuovo = updates[campo];
+        
+        // Se il valore è effettivamente cambiato
+        if (valorePrecedente !== valoreNuovo) {
+          console.log(`🔄 MODIFICA RILEVATA su campo "${campo}": "${valorePrecedente}" → "${valoreNuovo}"`);
+          nuovoStorico = aggiungiModificaAlloStorico(
+            nuovoStorico,
+            campo,
+            valorePrecedente,
+            valoreNuovo,
+            modificatoDa
+          );
+          isModification = true;
+        }
+      });
+    }
+
+    // Dati completi per rigenerare il TXT
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -703,15 +737,30 @@ const updateSheetRow = async (id, updates) => {
       item_noconv: row.get('item_noconv') || ''
     };
 
-    // Applica aggiornamenti (SENZA escape HTML)
+    // Applica aggiornamenti
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
+    
+    // ✅ Salva lo storico aggiornato SOLO se ci sono state modifiche
+    if (isModification) {
+      row.set('storico_modifiche', nuovoStorico);
+      console.log('💾 Storico modifiche aggiornato in Google Sheets');
+    }
+    
     await row.save();
 
-    if (updates.stato === 'consegnato') {
+    // ✅ Genera TXT alla consegna O alla modifica
+    if (updates.stato === 'consegnato' || (statoCorrente === 'consegnato' && isModification)) {
       try {
-        const txtResult = await generateTxtFile(invoiceDataForTxt);
-        if (txtResult) console.log('✅ File TXT generato:', txtResult.fileName);
-        else console.log('ℹ️ File TXT non generato (contenuto vuoto)');
+        const txtResult = await generateTxtFile(invoiceDataForTxt, isModification);
+        if (txtResult) {
+          if (isModification) {
+            console.log('🔄 File TXT rigenerato per modifica:', txtResult.fileName);
+          } else {
+            console.log('✅ File TXT generato:', txtResult.fileName);
+          }
+        } else {
+          console.log('ℹ️ File TXT non generato (contenuto vuoto)');
+        }
       } catch (txtError) {
         console.error('❌ Errore generazione file TXT:', txtError);
       }
@@ -724,9 +773,6 @@ const updateSheetRow = async (id, updates) => {
   }
 };
 
-// ==========================================
-// Fattura da DDT (UNA fattura per DDT)
-// ==========================================
 const generateInvoiceFromMovimentazione = async (ddtData) => {
   try {
     console.log('📄 Generando fattura automatica da DDT:', ddtData.ddt_number);
@@ -734,7 +780,6 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
 
-    // Evita duplicati
     const existingInvoice = rows.find(row => row.get('numero') === ddtData.ddt_number);
     if (existingInvoice) {
       console.log('ℹ️ Fattura già esistente per DDT:', ddtData.ddt_number);
@@ -744,24 +789,21 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
     const timestamp = Date.now();
     const uniqueId = `ddt_${timestamp}_${ddtData.ddt_number.replace(/\//g, '_')}`;
 
-    // Unisci eventuali TXT dei prodotti (restano nella colonna txt)
     const txtCombinato = ddtData.prodotti
       .map(p => p.txt_content)
       .filter(Boolean)
       .join('\n');
 
-    // SOLO elenco prodotti -> colonna testo_ddt
     const elencoProdotti = ddtData.prodotti.map(p => {
       const nome = sanitizeText(p.prodotto || '');
       const qta  = (p.quantita ?? '') !== '' ? String(p.quantita) : '';
       const um   = sanitizeText(p.unita_misura || '');
-      // esempio: "Mozzarella fior di latte - 3 KG"
       return [nome, qta ? ` - ${qta}` : '', um ? ` ${um}` : ''].join('');
     }).join('\n');
 
     const fatturaData = {
       id: uniqueId,
-      numero: ddtData.ddt_number,               // mantiene slash
+      numero: ddtData.ddt_number,
       fornitore: sanitizeText(ddtData.origine),
       data_emissione: sanitizeDateSafe(ddtData.data_movimento),
       data_consegna: '',
@@ -773,7 +815,8 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
       txt: txtCombinato,
       codice_fornitore: ddtData.codice_origine || 'TRANSFER',
       item_noconv: '',
-      testo_ddt: elencoProdotti
+      testo_ddt: elencoProdotti,
+      storico_modifiche: ''
     };
 
     await sheet.addRow(fatturaData);
@@ -786,9 +829,6 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
   }
 };
 
-// ==========================================
-// ROUTES - AUTENTICAZIONE
-// ==========================================
 app.post('/api/auth/login', loginLimiter, async (req, res) => {
   console.log('🔄 POST /api/auth/login ricevuta');
   try {
@@ -844,9 +884,6 @@ app.post('/api/auth/logout', authenticateToken, (req, res) => {
   res.json({ success: true, message: 'Logout effettuato' });
 });
 
-// ==========================================
-// ROUTES - FATTURE
-// ==========================================
 app.get('/api/invoices', authenticateToken, async (req, res) => {
   console.log('🔄 GET /api/invoices ricevuta');
   try {
@@ -876,13 +913,11 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
       return res.status(400).json({ error: 'Data non valida' });
     }
 
-    // Chi conferma
     let confermatoDa = req.user.email;
     if (req.user.role === 'admin' && typeof confermato_da_email_raw === 'string' && validateEmail(confermato_da_email_raw)) {
       confermatoDa = sanitizeEmailSafe(confermato_da_email_raw);
     }
 
-    // Prende la prima nota non vuota tra note_errori e note
     const noteFromBody =
       (typeof body.note_errori === 'string' && body.note_errori.trim() !== '' ? body.note_errori :
       (typeof body.note === 'string' && body.note.trim() !== '' ? body.note : ''));
@@ -894,7 +929,7 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
       ...(noteFromBody ? { note: sanitizeText(noteFromBody) } : {})
     };
 
-    await updateSheetRow(String(id), updates);
+    await updateSheetRow(String(id), updates, confermatoDa);
     res.json({ success: true, message: 'Consegna confermata' });
   } catch (error) {
     console.error('Errore conferma:', error);
@@ -902,6 +937,7 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
   }
 });
 
+// ✅ AGGIORNATO: Passa modificatoDa a updateSheetRow
 app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -923,7 +959,8 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
 
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
-    await updateSheetRow(id, updates);
+    // ✅ Passa l'email dell'utente che fa la modifica
+    await updateSheetRow(id, updates, req.user.email);
     res.json({ success: true, message: 'Fattura aggiornata con successo', updated_fields: Object.keys(updates) });
   } catch (error) {
     console.error('❌ Errore aggiornamento fattura:', error);
@@ -931,10 +968,6 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// ROUTES - MOVIMENTAZIONI
-// ==========================================
-// Salva TUTTE le righe prodotto + genera UNA fattura per DDT
 const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
   try {
     console.log('📦 Salvando movimentazioni su Google Sheets...');
@@ -960,7 +993,6 @@ const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
     const timestamp = new Date().toISOString();
     const dataOggi = new Date().toLocaleDateString('it-IT');
 
-    // Crea UNA riga per ogni prodotto del DDT
     const righe = movimenti.map((movimento, index) => ({
       id: `${ddtNumber.replace(/\//g, '_')}_${index}`,
       data_movimento: dataOggi,
@@ -976,13 +1008,12 @@ const saveMovimentazioniToSheet = async (movimenti, origine, ddtNumber) => {
       txt_content: movimento.txt_content || '',
       txt_filename: movimento.txt_filename || '',
       creato_da: movimento.creato_da || '',
-      ddt_number: ddtNumber // mantiene slash
+      ddt_number: ddtNumber
     }));
 
     await sheet.addRows(righe);
     console.log(`✅ ${righe.length} righe salvate nel foglio Movimentazioni`);
 
-    // Genera fattura unica per l'intero DDT
     const ddtData = {
       ddt_number: ddtNumber,
       origine: movimenti[0].origine || origine,
@@ -1019,7 +1050,6 @@ app.get('/api/movimentazioni', authenticateToken, async (req, res) => {
   }
 });
 
-// Riceve anche ddt_number dal frontend
 app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
   console.log('🔄 POST /api/movimentazioni ricevuta');
   try {
@@ -1048,7 +1078,7 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
       }
     }
 
-    const ddtNumberClean = sanitizeDDT(ddt_number); // mantiene slash
+    const ddtNumberClean = sanitizeDDT(ddt_number);
 
     for (let i = 0; i < movimenti.length; i++) {
       const m = movimenti[i];
@@ -1063,7 +1093,6 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
         return res.status(400).json({ error: `Destinazione richiesta per movimento ${i + 1}` });
       }
 
-      // ⚠️ Fix: NO escape HTML
       m.prodotto = sanitizeText(m.prodotto);
       m.quantita = parseFloat(m.quantita);
       m.unita_misura = sanitizeText(m.unita_misura || '');
@@ -1092,9 +1121,6 @@ app.post('/api/movimentazioni', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// ROUTES - PRODOTTI
-// ==========================================
 app.get('/api/prodotti', authenticateToken, async (req, res) => {
   console.log('🔄 GET /api/prodotti ricevuta');
   console.log('👤 Richiesta da utente:', req.user.email);
@@ -1138,9 +1164,6 @@ app.get('/api/prodotti', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// ROUTES - ADMIN
-// ==========================================
 app.get('/api/admin/dashboard', authenticateToken, requireAdmin, async (req, res) => {
   console.log('🔄 GET /api/admin/dashboard ricevuta');
   try {
@@ -1332,9 +1355,6 @@ app.get('/api/admin/export', authenticateToken, requireAdmin, async (req, res) =
   }
 });
 
-// ==========================================
-// ROUTES - UTILITÀ E FILE TXT
-// ==========================================
 app.get('/api/txt-files', authenticateToken, async (req, res) => {
   try {
     const files = await fs.readdir(TXT_FILES_DIR);
@@ -1375,6 +1395,7 @@ app.get('/api/txt-files/:filename', authenticateToken, async (req, res) => {
   }
 });
 
+// ✅ AGGIORNATO: Endpoint /content con storico modifiche
 app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) => {
   try {
     const { filename } = req.params;
@@ -1394,10 +1415,11 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
       content: fileContent,
       size: fileContent.length,
       hasErrors: hasErrorSuffix,
-      errorDetails: null
+      errorDetails: null,
+      storicoModifiche: null,
+      isModified: false
     };
 
-    // ✅ ESTRAZIONE NUMERO DOCUMENTO
     const cleanFilename = filename.replace('_ERRORI.txt', '').replace('.txt', '');
     const parts = cleanFilename.split('_');
 
@@ -1406,7 +1428,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
     console.log(`   Filename pulito: ${cleanFilename}`);
     console.log(`   Parts array:`, parts);
 
-    // Il numero documento è SEMPRE la prima parte
     let numeroDocumento = parts[0];
 
     console.log(`   Numero documento estratto: ${numeroDocumento}`);
@@ -1419,12 +1440,10 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
         console.log(`   Cerco fattura con numero: ${numeroDocumento}`);
         console.log(`   Totale fatture nel database: ${allInvoices.length}`);
 
-        // Cerca la fattura
         const relatedInvoice = allInvoices.find(inv => {
           const invNumero = String(inv.numero || '').trim();
           const searchNumero = String(numeroDocumento).trim();
           
-          // Debug ogni confronto
           const match = invNumero === searchNumero;
           if (match) {
             console.log(`   ✅ MATCH TROVATO!`);
@@ -1441,7 +1460,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
           
           const errorDetails = {};
 
-          // ✅ CONTROLLO ERRORE CONSEGNA (colonna K - "note")
           const noteValue = String(relatedInvoice.note || '').trim();
           console.log(`\n🔍 CONTROLLO ERRORI:`);
           console.log(`   Colonna "note": "${noteValue}"`);
@@ -1453,7 +1471,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
             console.log(`   ✅ Nessun errore consegna`);
           }
 
-          // ✅ CONTROLLO ERRORE CONVERSIONE (colonna O - "item_noconv")
           const itemNoConvValue = String(relatedInvoice.item_noconv || '').trim();
           console.log(`   Colonna "item_noconv": "${itemNoConvValue}"`);
 
@@ -1464,7 +1481,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
             console.log(`   ✅ Nessun errore conversione`);
           }
 
-          // Se ci sono errori, aggiungi i dettagli completi
           if (Object.keys(errorDetails).length > 0) {
             errorDetails.data_consegna = relatedInvoice.data_consegna;
             errorDetails.confermato_da = relatedInvoice.confermato_da;
@@ -1478,6 +1494,27 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
             console.log(`   errorDetails:`, errorDetails);
           } else {
             console.log(`\n⚠️ RISPOSTA FINALE: Nessun errore trovato nel database`);
+          }
+
+          // ✅ NUOVO: Aggiungi storico modifiche
+          const storicoString = relatedInvoice.storico_modifiche || '';
+          if (storicoString && storicoString.trim() !== '') {
+            const storicoArray = parseStoricoModifiche(storicoString);
+            if (storicoArray.length > 0) {
+              response.storicoModifiche = storicoArray;
+              response.isModified = true;
+              console.log(`\n🔄 STORICO MODIFICHE PRESENTE:`);
+              console.log(`   Numero modifiche: ${storicoArray.length}`);
+              storicoArray.forEach((mod, idx) => {
+                console.log(`   Modifica ${idx + 1}:`, {
+                  campo: mod.campo,
+                  da: mod.valore_precedente,
+                  a: mod.valore_nuovo,
+                  quando: mod.data_modifica,
+                  chi: mod.modificato_da
+                });
+              });
+            }
           }
         } else {
           console.log(`\n❌ FATTURA NON TROVATA`);
@@ -1637,9 +1674,6 @@ app.get('/api/txt-files/stats-by-date', authenticateToken, async (req, res) => {
   }
 });
 
-// ==========================================
-// HEALTH & INFO
-// ==========================================
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
@@ -1663,9 +1697,6 @@ app.get('/api/info', authenticateToken, (req, res) => {
   });
 });
 
-// ==========================================
-// ERROR HANDLER & 404
-// ==========================================
 app.use((error, req, res, next) => {
   console.error('Errore non gestito:', error);
   res.status(500).json({ error: 'Errore interno del server' });
@@ -1676,9 +1707,6 @@ app.use('*', (req, res) => {
   res.status(404).json({ error: 'Endpoint non trovato' });
 });
 
-// ==========================================
-// START SERVER
-// ==========================================
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server in esecuzione su 0.0.0.0:${PORT}`);
   console.log(`📱 Accesso mobile: http://192.168.60.142:${PORT}`);
