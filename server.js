@@ -1,4 +1,4 @@
-// server.js - VERSIONE CON TRACKING MODIFICHE (colonna P: storico_modifiche)
+// server.js - VERSIONE CON TRACKING MODIFICHE + REPORT ERRORI DDT
 const express = require('express');
 const archiver = require('archiver');
 const cors = require('cors');
@@ -115,7 +115,7 @@ const validateDate = (dateString) =>
   validator.isDate(dateString) && new Date(dateString) <= new Date();
 
 // ==========================================
-// ✅ NUOVA FUNZIONE: Parse storico modifiche
+// ✅ FUNZIONI: Parse storico modifiche
 // ==========================================
 const parseStoricoModifiche = (storicoString) => {
   if (!storicoString || storicoString.trim() === '') return [];
@@ -129,9 +129,6 @@ const parseStoricoModifiche = (storicoString) => {
   }
 };
 
-// ==========================================
-// ✅ NUOVA FUNZIONE: Salva modifica nello storico
-// ==========================================
 const aggiungiModificaAlloStorico = (storicoAttuale, campoModificato, valorePrecedente, valoreNuovo, modificatoDa) => {
   const storico = parseStoricoModifiche(storicoAttuale);
   
@@ -146,6 +143,70 @@ const aggiungiModificaAlloStorico = (storicoAttuale, campoModificato, valorePrec
   
   storico.push(nuovaModifica);
   return JSON.stringify(storico);
+};
+
+// ==========================================
+// ✅ NUOVO: Parser DDT multi-formato
+// ==========================================
+const parseRigaDDT = (riga) => {
+  riga = riga.trim();
+  if (!riga) return null;
+  
+  // FORMATO 1: pipe separato (CODICE | NOME | UM | QTA)
+  // Es: D7264 | BIB PEPSI COLA REGULAR 33 CL X 24 VP | KAR | 3
+  if (riga.includes('|')) {
+    const parts = riga.split('|').map(p => p.trim());
+    if (parts.length === 4) {
+      return {
+        codice: parts[0],
+        nome: parts[1],
+        um: parts[2],
+        quantita: parseFloat(parts[3])
+      };
+    }
+  }
+  
+  // FORMATO 2: underscore + trattino (CODICE_NOME - QTA UM)
+  // Es: 19332_FETTINE EXTRA CARCIOFO OLIO"ARCO"FT.3 KG - 33 KG
+  if (riga.includes('_') && riga.includes(' - ')) {
+    const [codiceENome, qtaEUm] = riga.split(' - ');
+    const underscoreIndex = codiceENome.indexOf('_');
+    
+    if (underscoreIndex > 0) {
+      const codice = codiceENome.substring(0, underscoreIndex).trim();
+      const nome = codiceENome.substring(underscoreIndex + 1).trim();
+      
+      const qtaParts = qtaEUm.trim().split(' ');
+      const quantita = parseFloat(qtaParts[0]);
+      const um = qtaParts[qtaParts.length - 1]; // ultima parte
+      
+      if (!isNaN(quantita) && um) {
+        return { codice, nome, um, quantita };
+      }
+    }
+  }
+  
+  console.warn('⚠️ Formato riga DDT non riconosciuto:', riga);
+  return null;
+};
+
+const parseDDTCompleto = (testoDDT) => {
+  if (!testoDDT || testoDDT.trim() === '') return [];
+  
+  const righe = testoDDT.split('\n').filter(r => r.trim() !== '');
+  
+  return righe.map((riga, index) => {
+    const parsed = parseRigaDDT(riga);
+    if (!parsed) {
+      console.warn(`⚠️ Riga ${index + 1} non riconosciuta:`, riga);
+      return null;
+    }
+    return {
+      ...parsed,
+      riga_originale: riga,
+      riga_numero: index + 1
+    };
+  }).filter(Boolean); // rimuovi i null
 };
 
 // ==========================================
@@ -206,7 +267,6 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
       console.log(`✅ File TXT generato con successo: ${fileName}`);
     }
 
-    // ✅ NUOVO: Se è una modifica, logga
     if (isModification) {
       console.log(`🔄 File TXT rigenerato per modifica: ${fileName}`);
     }
@@ -503,7 +563,8 @@ const loadAllSheetData = async () => {
       codice_fornitore: row.get('codice_fornitore') || '',
       testo_ddt: row.get('testo_ddt') || '',
       item_noconv: row.get('item_noconv') || '',
-      storico_modifiche: row.get('storico_modifiche') || ''
+      storico_modifiche: row.get('storico_modifiche') || '',
+      errori_consegna: row.get('errori_consegna') || ''
     }));
 
     const uniqueData = data.filter((invoice, index, self) =>
@@ -537,7 +598,8 @@ const loadSheetData = async (puntoVendita) => {
       codice_fornitore: row.get('codice_fornitore') || '',
       testo_ddt: row.get('testo_ddt') || '',
       item_noconv: row.get('item_noconv') || '',
-      storico_modifiche: row.get('storico_modifiche') || ''
+      storico_modifiche: row.get('storico_modifiche') || '',
+      errori_consegna: row.get('errori_consegna') || ''
     }));
 
     if (puntoVendita) data = data.filter(r => r.punto_vendita === puntoVendita);
@@ -687,7 +749,6 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       throw new Error('Fattura non trovata');
     }
 
-    // ✅ Salva valori PRECEDENTI prima della modifica
     const valoriPrecedenti = {
       data_consegna: row.get('data_consegna') || '',
       confermato_da: row.get('confermato_da') || '',
@@ -699,15 +760,12 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
     let nuovoStorico = storicoAttuale;
     let isModification = false;
 
-    // ✅ Traccia SOLO se la fattura è già consegnata E ci sono modifiche
     const statoCorrente = row.get('stato');
     if (statoCorrente === 'consegnato') {
-      // Controlla ogni campo modificato
       Object.keys(updates).forEach(campo => {
         const valorePrecedente = valoriPrecedenti[campo];
         const valoreNuovo = updates[campo];
         
-        // Se il valore è effettivamente cambiato
         if (valorePrecedente !== valoreNuovo) {
           console.log(`🔄 MODIFICA RILEVATA su campo "${campo}": "${valorePrecedente}" → "${valoreNuovo}"`);
           nuovoStorico = aggiungiModificaAlloStorico(
@@ -722,7 +780,6 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       });
     }
 
-    // Dati completi per rigenerare il TXT
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -737,10 +794,8 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       item_noconv: row.get('item_noconv') || ''
     };
 
-    // Applica aggiornamenti
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
     
-    // ✅ Salva lo storico aggiornato SOLO se ci sono state modifiche
     if (isModification) {
       row.set('storico_modifiche', nuovoStorico);
       console.log('💾 Storico modifiche aggiornato in Google Sheets');
@@ -748,7 +803,6 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
     
     await row.save();
 
-    // ✅ Genera TXT alla consegna O alla modifica
     if (updates.stato === 'consegnato' || (statoCorrente === 'consegnato' && isModification)) {
       try {
         const txtResult = await generateTxtFile(invoiceDataForTxt, isModification);
@@ -816,7 +870,8 @@ const generateInvoiceFromMovimentazione = async (ddtData) => {
       codice_fornitore: ddtData.codice_origine || 'TRANSFER',
       item_noconv: '',
       testo_ddt: elencoProdotti,
-      storico_modifiche: ''
+      storico_modifiche: '',
+      errori_consegna: ''
     };
 
     await sheet.addRow(fatturaData);
@@ -898,6 +953,172 @@ app.get('/api/invoices', authenticateToken, async (req, res) => {
   }
 });
 
+// ==========================================
+// ✅ NUOVO: Endpoint per parsing DDT
+// ==========================================
+app.get('/api/invoices/:id/parse-ddt', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('🔄 GET /api/invoices/:id/parse-ddt ricevuta per ID:', id);
+    
+    const sheet = await getGoogleSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === id.toString());
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Fattura non trovata' });
+    }
+    
+    const testoDDT = row.get('testo_ddt') || '';
+    const prodottiParsed = parseDDTCompleto(testoDDT);
+    
+    console.log(`✅ DDT parsato: ${prodottiParsed.length} prodotti trovati`);
+    
+    res.json({
+      success: true,
+      fattura: {
+        id: row.get('id'),
+        numero: row.get('numero'),
+        fornitore: row.get('fornitore'),
+        data_emissione: row.get('data_emissione'),
+        punto_vendita: row.get('punto_vendita'),
+        codice_fornitore: row.get('codice_fornitore') || ''
+      },
+      prodotti: prodottiParsed,
+      testo_originale: testoDDT
+    });
+  } catch (error) {
+    console.error('❌ Errore parsing DDT:', error);
+    res.status(500).json({ error: 'Impossibile parsare il DDT: ' + error.message });
+  }
+});
+
+// ==========================================
+// ✅ NUOVO: Endpoint per report errori
+// ==========================================
+app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data_consegna, modifiche_righe, note_testuali } = req.body;
+    
+    console.log('🔄 POST /api/invoices/:id/report-error ricevuta per ID:', id);
+    
+    // Validazione
+    if (!data_consegna || !validateDate(data_consegna)) {
+      return res.status(400).json({ error: 'Data di consegna non valida' });
+    }
+    
+    // Almeno una modifica O una nota
+    const hasModifiche = modifiche_righe?.some(m => m.modificato);
+    const hasNote = note_testuali && note_testuali.trim() !== '';
+    
+    if (!hasModifiche && !hasNote) {
+      return res.status(400).json({ 
+        error: 'Inserisci almeno una modifica o una nota testuale' 
+      });
+    }
+    
+    // Recupera dati fattura
+    const sheet = await getGoogleSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === id.toString());
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Fattura non trovata' });
+    }
+    
+    // Prepara oggetto errori
+    const erroriData = {
+      timestamp: new Date().toISOString(),
+      data_consegna: sanitizeDateSafe(data_consegna),
+      utente: req.user.email,
+      modifiche: modifiche_righe || [],
+      note_testuali: sanitizeText(note_testuali || ''),
+      righe_modificate: modifiche_righe?.filter(m => m.modificato).length || 0,
+      totale_righe: modifiche_righe?.length || 0
+    };
+    
+    console.log(`⚠️ Registrando errori: ${erroriData.righe_modificate} righe modificate`);
+    
+    // Salva in Google Sheet
+    row.set('errori_consegna', JSON.stringify(erroriData));
+    row.set('stato', 'consegnato');
+    row.set('data_consegna', sanitizeDateSafe(data_consegna));
+    row.set('confermato_da', req.user.email);
+    row.set('note', sanitizeText(note_testuali || ''));
+    await row.save();
+    
+    console.log('💾 Errori salvati in Google Sheet');
+    
+    // Prepara payload per endpoint esterno
+    const externalPayload = {
+      numero_documento: row.get('numero'),
+      data_emissione: row.get('data_emissione'),
+      data_consegna: sanitizeDateSafe(data_consegna),
+      fornitore: row.get('fornitore'),
+      punto_vendita: row.get('punto_vendita'),
+      codice_fornitore: row.get('codice_fornitore') || '',
+      testo_ddt_originale: row.get('testo_ddt') || '',
+      errori: erroriData
+    };
+    
+    // Chiamata endpoint esterno n8n (con try/catch per non bloccare il flusso)
+    try {
+      console.log('📡 Chiamando webhook n8n...');
+      const webhookResponse = await fetch(
+        'https://andreafd.app.n8n.cloud/webhook-test/198ebdde-faee-4d0f-93aa-9c8dc138bbee',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(externalPayload)
+        }
+      );
+      
+      if (webhookResponse.ok) {
+        console.log('✅ Errori inviati a webhook n8n con successo');
+      } else {
+        console.warn('⚠️ Webhook n8n ha risposto con errore:', webhookResponse.status);
+      }
+    } catch (webhookError) {
+      console.error('❌ Errore chiamata webhook n8n:', webhookError.message);
+      // Non blocchiamo il flusso anche se il webhook fallisce
+    }
+    
+    // Genera file TXT come per le consegne normali
+    const invoiceDataForTxt = {
+      id: row.get('id'),
+      numero: row.get('numero'),
+      fornitore: row.get('fornitore'),
+      data_emissione: row.get('data_emissione'),
+      data_consegna: sanitizeDateSafe(data_consegna),
+      punto_vendita: row.get('punto_vendita'),
+      confermato_da: req.user.email,
+      txt: row.get('txt') || '',
+      codice_fornitore: row.get('codice_fornitore') || '',
+      note: sanitizeText(note_testuali || ''),
+      item_noconv: row.get('item_noconv') || ''
+    };
+    
+    try {
+      await generateTxtFile(invoiceDataForTxt);
+      console.log('📄 File TXT generato con errori segnalati');
+    } catch (txtError) {
+      console.error('❌ Errore generazione file TXT:', txtError);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: '⚠️ Errori registrati e comunicati con successo',
+      webhook_chiamato: true
+    });
+    
+  } catch (error) {
+    console.error('❌ Errore report errori:', error);
+    res.status(500).json({ error: 'Impossibile registrare gli errori: ' + error.message });
+  }
+});
+
 app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -937,7 +1158,6 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ AGGIORNATO: Passa modificatoDa a updateSheetRow
 app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
@@ -959,7 +1179,6 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
 
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
 
-    // ✅ Passa l'email dell'utente che fa la modifica
     await updateSheetRow(id, updates, req.user.email);
     res.json({ success: true, message: 'Fattura aggiornata con successo', updated_fields: Object.keys(updates) });
   } catch (error) {
@@ -1395,7 +1614,6 @@ app.get('/api/txt-files/:filename', authenticateToken, async (req, res) => {
   }
 });
 
-// ✅ AGGIORNATO: Endpoint /content con storico modifiche
 app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) => {
   try {
     const { filename } = req.params;
@@ -1496,7 +1714,6 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
             console.log(`\n⚠️ RISPOSTA FINALE: Nessun errore trovato nel database`);
           }
 
-          // ✅ NUOVO: Aggiungi storico modifiche
           const storicoString = relatedInvoice.storico_modifiche || '';
           if (storicoString && storicoString.trim() !== '') {
             const storicoArray = parseStoricoModifiche(storicoString);
