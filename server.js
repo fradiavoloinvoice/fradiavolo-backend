@@ -1261,26 +1261,48 @@ app.post('/api/invoices/:id/confirm', authenticateToken, async (req, res) => {
 app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
-    const { data_consegna, confermato_da, note } = req.body;
+    const { data_consegna, confermato_da, note, errori_consegna } = req.body;
+    
+    console.log('🔄 PUT /api/invoices/:id ricevuta per ID:', id);
+    console.log('📦 Body:', { data_consegna, confermato_da, note: note ? 'presente' : 'assente', errori_consegna: errori_consegna ? 'presente' : 'assente' });
+    
     if (!id) return res.status(400).json({ error: 'ID fattura richiesto' });
 
     const updates = {};
+    
     if (data_consegna) {
       if (!validateDate(data_consegna)) return res.status(400).json({ error: 'Data non valida' });
       updates.data_consegna = sanitizeDateSafe(data_consegna);
     }
+    
     if (confermato_da) {
       if (!validateEmail(confermato_da)) return res.status(400).json({ error: 'Email non valida' });
       updates.confermato_da = sanitizeEmailSafe(confermato_da);
     }
+    
     if (typeof note === 'string') {
       updates.note = sanitizeText(note);
     }
+    
+    // ✅ NUOVO: Gestisci aggiornamento errori_consegna
+    if (typeof errori_consegna === 'string' && errori_consegna.trim() !== '') {
+      updates.errori_consegna = errori_consegna;
+      console.log('✅ Aggiornamento errori_consegna ricevuto');
+    }
 
-    if (Object.keys(updates).length === 0) return res.status(400).json({ error: 'Nessun campo da aggiornare' });
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'Nessun campo da aggiornare' });
+    }
 
     await updateSheetRow(id, updates, req.user.email);
-    res.json({ success: true, message: 'Fattura aggiornata con successo', updated_fields: Object.keys(updates) });
+    
+    console.log('✅ Fattura aggiornata con successo');
+    
+    res.json({ 
+      success: true, 
+      message: 'Fattura aggiornata con successo', 
+      updated_fields: Object.keys(updates) 
+    });
   } catch (error) {
     console.error('❌ Errore aggiornamento fattura:', error);
     res.status(500).json({ error: 'Impossibile aggiornare la fattura: ' + error.message });
