@@ -213,6 +213,9 @@ const parseDDTCompleto = (testoDDT) => {
 // ==========================================
 // GENERAZIONE FILE TXT (per fatture consegnate)
 // ==========================================
+// ==========================================
+// GENERAZIONE FILE TXT (per fatture consegnate)
+// ==========================================
 const generateTxtFile = async (invoiceData, isModification = false) => {
   try {
     console.log('📄 Generando file TXT per fattura:', invoiceData.id, isModification ? '(MODIFICA)' : '(NUOVA)');
@@ -224,6 +227,8 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const contenutoTxt = invoiceData.txt || '';
     const noteErrori = invoiceData.note || '';
     const itemNoConv = invoiceData.item_noconv || '';
+    // ✅ AGGIUNTO: Leggi errori_consegna
+    const erroriConsegna = invoiceData.errori_consegna || '';
 
     const negozio = negozi.find(n => n.nome === puntoVendita);
     const codicePV = negozio?.codice || 'UNKNOWN';
@@ -249,21 +254,54 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const nomeFornitorePulito = cleanForFilename(nomeFornitore);
     const codicePVPulito = cleanForFilename(codicePV);
 
-    const erroriConsegna = invoiceData.errori_consegna || '';
-const hasStructuredErrors = erroriConsegna && erroriConsegna.trim() !== '';
-const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
-const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
-const hasErrors = hasStructuredErrors || hasNoteErrors || hasConversionErrors;
+    // ✅ FIX: Controlla correttamente tutti i tipi di errori
+    const hasStructuredErrors = erroriConsegna && erroriConsegna.trim() !== '';
+    const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
+    const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
+    const hasErrors = hasStructuredErrors || hasNoteErrors || hasConversionErrors;
     
     const errorSuffix = hasErrors ? '_ERRORI' : '';
 
     const fileName = `${numeroDocPulito}_${dataFormatted}_${nomeFornitorePulito}_${codicePVPulito}${errorSuffix}.txt`;
     const filePath = path.join(TXT_FILES_DIR, fileName);
 
+    // ✅ NUOVO: Cerca e rimuovi file esistenti per questa fattura
+    try {
+      const allFiles = await fs.readdir(TXT_FILES_DIR);
+      const existingFiles = allFiles.filter(file => {
+        // Cerca file che iniziano con lo stesso numero documento
+        return file.startsWith(numeroDocPulito + '_') && 
+               file.endsWith('.txt') && 
+               !file.includes('.backup');
+      });
+
+      if (existingFiles.length > 0) {
+        console.log(`🔄 Trovati ${existingFiles.length} file esistenti per questa fattura:`);
+        
+        for (const oldFile of existingFiles) {
+          const oldFilePath = path.join(TXT_FILES_DIR, oldFile);
+          
+          // Crea backup del file vecchio
+          const backupPath = path.join(TXT_FILES_DIR, `REPLACED_${oldFile}.backup.${Date.now()}`);
+          const oldContent = await fs.readFile(oldFilePath, 'utf8');
+          await fs.writeFile(backupPath, oldContent, 'utf8');
+          
+          // Elimina il file vecchio
+          await fs.unlink(oldFilePath);
+          console.log(`   ✅ Rimosso file vecchio: ${oldFile} (backup creato)`);
+        }
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️ Errore durante la pulizia dei file vecchi:', cleanupError.message);
+      // Non blocchiamo la generazione del nuovo file
+    }
+
+    // Crea il nuovo file
     await fs.writeFile(filePath, contenutoTxt, 'utf8');
 
     if (hasErrors) {
       console.log(`⚠️ File TXT CON ERRORI generato: ${fileName}`);
+      if (hasStructuredErrors) console.log(`   → Errori strutturati presenti`);
       if (hasNoteErrors) console.log(`   → Errore consegna: ${noteErrori}`);
       if (hasConversionErrors) console.log(`   → Errore conversione: ${itemNoConv}`);
     } else {
@@ -280,7 +318,8 @@ const hasErrors = hasStructuredErrors || hasNoteErrors || hasConversionErrors;
       size: contenutoTxt.length,
       hasErrors,
       noteErrori: hasErrors ? (noteErrori || itemNoConv) : null,
-      isModification
+      isModification,
+      replacedFiles: existingFiles?.length || 0  // ✅ NUOVO: Indica quanti file sono stati sostituiti
     };
   } catch (error) {
     console.error('❌ Errore generazione file TXT:', error);
@@ -756,7 +795,8 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       data_consegna: row.get('data_consegna') || '',
       confermato_da: row.get('confermato_da') || '',
       note: row.get('note') || '',
-      stato: row.get('stato') || ''
+      stato: row.get('stato') || '',
+      errori_consegna: row.get('errori_consegna') || ''  // ✅ AGGIUNTO
     };
 
     const storicoAttuale = row.get('storico_modifiche') || '';
@@ -783,6 +823,7 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       });
     }
 
+    // ✅ FIX: Includi errori_consegna nei dati per generateTxtFile
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -794,7 +835,8 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
       note: (updates.note ?? row.get('note') ?? ''),
-      item_noconv: row.get('item_noconv') || ''
+      item_noconv: row.get('item_noconv') || '',
+      errori_consegna: updates.errori_consegna || row.get('errori_consegna') || ''  // ✅ AGGIUNTO
     };
 
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
@@ -810,7 +852,9 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       try {
         const txtResult = await generateTxtFile(invoiceDataForTxt, isModification);
         if (txtResult) {
-          if (isModification) {
+          if (txtResult.replacedFiles > 0) {
+            console.log(`🔄 File TXT sostituito (${txtResult.replacedFiles} file vecchi rimossi):`, txtResult.fileName);
+          } else if (isModification) {
             console.log('🔄 File TXT rigenerato per modifica:', txtResult.fileName);
           } else {
             console.log('✅ File TXT generato:', txtResult.fileName);
@@ -1033,100 +1077,99 @@ app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) =
     
     // Prepara oggetto errori
     const erroriData = {
-  timestamp: new Date().toISOString(),
-  data_consegna: sanitizeDateSafe(data_consegna),
-  utente: req.user.email,
-  modifiche: modifiche_righe?.filter(m => m.modificato) || [],  // <-- SOLO MODIFICATE
-  note_testuali: sanitizeText(note_testuali || ''),
-  righe_modificate: modifiche_righe?.filter(m => m.modificato).length || 0,
-  totale_righe: modifiche_righe?.length || 0
-};
+      timestamp: new Date().toISOString(),
+      data_consegna: sanitizeDateSafe(data_consegna),
+      utente: req.user.email,
+      modifiche: modifiche_righe?.filter(m => m.modificato) || [],
+      note_testuali: sanitizeText(note_testuali || ''),
+      righe_modificate: modifiche_righe?.filter(m => m.modificato).length || 0,
+      totale_righe: modifiche_righe?.length || 0
+    };
     
     console.log(`⚠️ Registrando errori: ${erroriData.righe_modificate} righe modificate`);
     
+    // ✅ Converti erroriData in JSON string per salvarlo
+    const erroriConsegnaJson = JSON.stringify(erroriData);
+    
     // Salva in Google Sheet
-    row.set('errori_consegna', JSON.stringify(erroriData));
-row.set('stato', 'consegnato');
-row.set('data_consegna', sanitizeDateSafe(data_consegna));
-row.set('confermato_da', req.user.email);
-// ✅ NON salviamo più in 'note' - tutto è in 'errori_consegna'
-// row.set('note', sanitizeText(note_testuali || '')); ← RIMOSSO
-await row.save();
+    row.set('errori_consegna', erroriConsegnaJson);
+    row.set('stato', 'consegnato');
+    row.set('data_consegna', sanitizeDateSafe(data_consegna));
+    row.set('confermato_da', req.user.email);
+    await row.save();
     
     console.log('💾 Errori salvati in Google Sheet');
     
-   // Prepara payload per endpoint esterno
-const externalPayload = {
-  numero_documento: row.get('numero'),
-  data_emissione: row.get('data_emissione'),
-  data_consegna: sanitizeDateSafe(data_consegna),
-  fornitore: row.get('fornitore'),
-  punto_vendita: row.get('punto_vendita'),
-  codice_fornitore: row.get('codice_fornitore') || '',
-  testo_ddt_originale: row.get('testo_ddt') || '',
-  errori: erroriData
-};
+    // Prepara payload per endpoint esterno
+    const externalPayload = {
+      numero_documento: row.get('numero'),
+      data_emissione: row.get('data_emissione'),
+      data_consegna: sanitizeDateSafe(data_consegna),
+      fornitore: row.get('fornitore'),
+      punto_vendita: row.get('punto_vendita'),
+      codice_fornitore: row.get('codice_fornitore') || '',
+      testo_ddt_originale: row.get('testo_ddt') || '',
+      errori: erroriData
+    };
 
-// 📧 NUOVO: Crea contenuto email per fornitore
-const emailFornitore = {
-  subject: `Fradiavolo - Segnalazione errore di consegna - DDT ${row.get('numero')}`,
-  
-  // Versione HTML
-  html: `
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-      <h2 style="color: #dc3545; border-bottom: 3px solid #dc3545; padding-bottom: 10px;">
-        🍕 Fradiavolo - Segnalazione errore di consegna
-      </h2>
+    // 📧 Crea contenuto email per fornitore
+    const emailFornitore = {
+      subject: `Fradiavolo - Segnalazione errore di consegna - DDT ${row.get('numero')}`,
       
-      <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
-        <p style="margin: 8px 0;"><strong>Punto vendita:</strong> ${row.get('punto_vendita')}</p>
-        <p style="margin: 8px 0;"><strong>Numero documento:</strong> ${row.get('numero')}</p>
-        <p style="margin: 8px 0;"><strong>Data di emissione:</strong> ${new Date(row.get('data_emissione')).toLocaleDateString('it-IT')}</p>
-        <p style="margin: 8px 0;"><strong>Data di consegna:</strong> ${new Date(data_consegna).toLocaleDateString('it-IT')}</p>
-      </div>
-      
-      <h3 style="color: #495057; border-bottom: 2px solid #ffc107; padding-bottom: 8px;">
-        📄 DDT emesso:
-      </h3>
-      <pre style="background: #e9ecef; padding: 15px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; overflow-x: auto;">${row.get('testo_ddt') || 'Non disponibile'}</pre>
-      
-      <h3 style="color: #495057; border-bottom: 2px solid #dc3545; padding-bottom: 8px; margin-top: 30px;">
-        ⚠️ Errori segnalati:
-      </h3>
-      ${erroriData.modifiche && erroriData.modifiche.length > 0 ? `
-        <div style="margin: 15px 0;">
-          ${erroriData.modifiche.map(modifica => `
-            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 10px 0; border-radius: 4px;">
-              <p style="margin: 5px 0; font-weight: bold;">Riga ${modifica.riga_numero}: ${modifica.nome || modifica.prodotto_originale || 'Prodotto'}</p>
-              <p style="margin: 5px 0; color: #856404;">
-                Codice: ${modifica.codice || 'N/A'} | 
-                Ordinato: ${modifica.quantita_originale} ${modifica.unita_misura || ''} → 
-                Ricevuto: ${modifica.quantita_ricevuta} ${modifica.unita_misura || ''}
-              </p>
-              ${modifica.motivo ? `<p style="margin: 5px 0; font-style: italic; color: #666;">Motivo: ${modifica.motivo}</p>` : ''}
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #dc3545; border-bottom: 3px solid #dc3545; padding-bottom: 10px;">
+            🍕 Fradiavolo - Segnalazione errore di consegna
+          </h2>
+          
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 8px 0;"><strong>Punto vendita:</strong> ${row.get('punto_vendita')}</p>
+            <p style="margin: 8px 0;"><strong>Numero documento:</strong> ${row.get('numero')}</p>
+            <p style="margin: 8px 0;"><strong>Data di emissione:</strong> ${new Date(row.get('data_emissione')).toLocaleDateString('it-IT')}</p>
+            <p style="margin: 8px 0;"><strong>Data di consegna:</strong> ${new Date(data_consegna).toLocaleDateString('it-IT')}</p>
+          </div>
+          
+          <h3 style="color: #495057; border-bottom: 2px solid #ffc107; padding-bottom: 8px;">
+            📄 DDT emesso:
+          </h3>
+          <pre style="background: #e9ecef; padding: 15px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; overflow-x: auto;">${row.get('testo_ddt') || 'Non disponibile'}</pre>
+          
+          <h3 style="color: #495057; border-bottom: 2px solid #dc3545; padding-bottom: 8px; margin-top: 30px;">
+            ⚠️ Errori segnalati:
+          </h3>
+          ${erroriData.modifiche && erroriData.modifiche.length > 0 ? `
+            <div style="margin: 15px 0;">
+              ${erroriData.modifiche.map(modifica => `
+                <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 10px 0; border-radius: 4px;">
+                  <p style="margin: 5px 0; font-weight: bold;">Riga ${modifica.riga_numero}: ${modifica.nome || modifica.prodotto_originale || 'Prodotto'}</p>
+                  <p style="margin: 5px 0; color: #856404;">
+                    Codice: ${modifica.codice || 'N/A'} | 
+                    Ordinato: ${modifica.quantita_originale} ${modifica.unita_misura || ''} → 
+                    Ricevuto: ${modifica.quantita_ricevuta} ${modifica.unita_misura || ''}
+                  </p>
+                  ${modifica.motivo ? `<p style="margin: 5px 0; font-style: italic; color: #666;">Motivo: ${modifica.motivo}</p>` : ''}
+                </div>
+              `).join('')}
             </div>
-          `).join('')}
+          ` : '<p style="color: #6c757d;">Nessuna modifica alle quantità</p>'}
+          
+          <h3 style="color: #495057; border-bottom: 2px solid #28a745; padding-bottom: 8px; margin-top: 30px;">
+            📝 Note aggiuntive:
+          </h3>
+          <div style="background: white; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px;">
+            ${erroriData.note_testuali || '<em style="color: #6c757d;">Nessuna nota aggiuntiva</em>'}
+          </div>
+          
+          <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 4px; text-align: center;">
+            <p style="margin: 0; color: #6c757d; font-size: 12px;">
+              Segnalato da: ${erroriData.utente}<br>
+              Data segnalazione: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
+            </p>
+          </div>
         </div>
-      ` : '<p style="color: #6c757d;">Nessuna modifica alle quantità</p>'}
+      `,
       
-      <h3 style="color: #495057; border-bottom: 2px solid #28a745; padding-bottom: 8px; margin-top: 30px;">
-        📝 Note aggiuntive:
-      </h3>
-      <div style="background: white; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px;">
-        ${erroriData.note_testuali || '<em style="color: #6c757d;">Nessuna nota aggiuntiva</em>'}
-      </div>
-      
-      <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 4px; text-align: center;">
-        <p style="margin: 0; color: #6c757d; font-size: 12px;">
-          Segnalato da: ${erroriData.utente}<br>
-          Data segnalazione: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
-        </p>
-      </div>
-    </div>
-  `,
-  
-  // Versione Plain Text
-  text: `
+      text: `
 FRADIAVOLO - SEGNALAZIONE ERRORE DI CONSEGNA
 =============================================
 
@@ -1157,13 +1200,12 @@ ${erroriData.note_testuali || 'Nessuna nota aggiuntiva'}
 ---
 Segnalato da: ${erroriData.utente}
 Data: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
-  `.trim()
-};
+      `.trim()
+    };
 
-// Aggiungi al payload
-externalPayload.email_fornitore = emailFornitore;
+    externalPayload.email_fornitore = emailFornitore;
     
-    // Chiamata endpoint esterno n8n (con try/catch per non bloccare il flusso)
+    // Chiamata endpoint esterno n8n
     try {
       console.log('📡 Chiamando webhook n8n...');
       const webhookResponse = await fetch(
@@ -1182,10 +1224,9 @@ externalPayload.email_fornitore = emailFornitore;
       }
     } catch (webhookError) {
       console.error('❌ Errore chiamata webhook n8n:', webhookError.message);
-      // Non blocchiamo il flusso anche se il webhook fallisce
     }
     
-    // Genera file TXT come per le consegne normali
+    // ✅ FIX: Genera file TXT con errori_consegna incluso
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -1197,12 +1238,20 @@ externalPayload.email_fornitore = emailFornitore;
       txt: row.get('txt') || '',
       codice_fornitore: row.get('codice_fornitore') || '',
       note: sanitizeText(note_testuali || ''),
-      item_noconv: row.get('item_noconv') || ''
+      item_noconv: row.get('item_noconv') || '',
+      errori_consegna: erroriConsegnaJson  // ✅ AGGIUNTO: Passa il JSON degli errori
     };
     
     try {
-      await generateTxtFile(invoiceDataForTxt);
-      console.log('📄 File TXT generato con errori segnalati');
+      const txtResult = await generateTxtFile(invoiceDataForTxt);
+      if (txtResult) {
+        console.log('📄 File TXT generato con errori segnalati:', txtResult.fileName);
+        if (txtResult.replacedFiles > 0) {
+          console.log(`   🔄 ${txtResult.replacedFiles} file vecchi sostituiti`);
+        }
+      } else {
+        console.log('⚠️ File TXT non generato (contenuto vuoto)');
+      }
     } catch (txtError) {
       console.error('❌ Errore generazione file TXT:', txtError);
     }
