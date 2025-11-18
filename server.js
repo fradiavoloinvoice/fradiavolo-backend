@@ -1,4 +1,4 @@
-// server.js - VERSIONE CON TRACKING MODIFICHE + REPORT ERRORI DDT
+// server.js - VERSIONE CON TRACKING MODIFICHE + REPORT ERRORI DDT + NUOVI ENDPOINT FASE 1
 const express = require('express');
 const archiver = require('archiver');
 const fetch = require('node-fetch');
@@ -260,14 +260,12 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const fileName = `${numeroDocPulito}_${dataFormatted}_${nomeFornitorePulito}_${codicePVPulito}${errorSuffix}.txt`;
     const filePath = path.join(TXT_FILES_DIR, fileName);
 
-    // ✅ FIX: Dichiara existingFiles all'inizio della funzione
     let existingFiles = [];
 
     // NUOVO: Cerca e rimuovi file esistenti per questa fattura
     try {
       const allFiles = await fs.readdir(TXT_FILES_DIR);
       existingFiles = allFiles.filter(file => {
-        // Cerca file che iniziano con lo stesso numero documento
         return file.startsWith(numeroDocPulito + '_') && 
                file.endsWith('.txt') && 
                !file.includes('.backup');
@@ -279,22 +277,18 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
         for (const oldFile of existingFiles) {
           const oldFilePath = path.join(TXT_FILES_DIR, oldFile);
           
-          // Crea backup del file vecchio
           const backupPath = path.join(TXT_FILES_DIR, `REPLACED_${oldFile}.backup.${Date.now()}`);
           const oldContent = await fs.readFile(oldFilePath, 'utf8');
           await fs.writeFile(backupPath, oldContent, 'utf8');
           
-          // Elimina il file vecchio
           await fs.unlink(oldFilePath);
           console.log(`   ✅ Rimosso file vecchio: ${oldFile} (backup creato)`);
         }
       }
     } catch (cleanupError) {
       console.warn('⚠️ Errore durante la pulizia dei file vecchi:', cleanupError.message);
-      // Non blocchiamo la generazione del nuovo file
     }
 
-    // Crea il nuovo file
     await fs.writeFile(filePath, contenutoTxt, 'utf8');
 
     if (hasErrors) {
@@ -317,7 +311,7 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
       hasErrors,
       noteErrori: hasErrors ? (noteErrori || itemNoConv) : null,
       isModification,
-      replacedFiles: existingFiles.length  // ✅ FIX: Ora existingFiles è sempre definito
+      replacedFiles: existingFiles.length
     };
   } catch (error) {
     console.error('❌ Errore generazione file TXT:', error);
@@ -794,7 +788,7 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       confermato_da: row.get('confermato_da') || '',
       note: row.get('note') || '',
       stato: row.get('stato') || '',
-      errori_consegna: row.get('errori_consegna') || ''  // ✅ AGGIUNTO
+      errori_consegna: row.get('errori_consegna') || ''
     };
 
     const storicoAttuale = row.get('storico_modifiche') || '';
@@ -821,7 +815,6 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       });
     }
 
-    // ✅ FIX: Includi errori_consegna nei dati per generateTxtFile
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -834,7 +827,7 @@ const updateSheetRow = async (id, updates, modificatoDa = 'system') => {
       codice_fornitore: row.get('codice_fornitore') || '',
       note: (updates.note ?? row.get('note') ?? ''),
       item_noconv: row.get('item_noconv') || '',
-      errori_consegna: updates.errori_consegna || row.get('errori_consegna') || ''  // ✅ AGGIUNTO
+      errori_consegna: updates.errori_consegna || row.get('errori_consegna') || ''
     };
 
     Object.keys(updates).forEach(key => row.set(key, updates[key]));
@@ -999,6 +992,234 @@ app.get('/api/invoices', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
+// ✅ NUOVO: GET /api/invoices/:id - CON FLAG ERRORI/CRONOLOGIA
+// ==========================================
+app.get('/api/invoices/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('🔄 GET /api/invoices/:id ricevuta per ID:', id);
+    
+    const sheet = await getGoogleSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === id.toString());
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Fattura non trovata' });
+    }
+    
+    // Dati base fattura
+    const invoiceData = {
+      id: row.get('id'),
+      numero: row.get('numero'),
+      fornitore: row.get('fornitore'),
+      data_emissione: row.get('data_emissione'),
+      data_consegna: row.get('data_consegna'),
+      stato: row.get('stato'),
+      punto_vendita: row.get('punto_vendita'),
+      confermato_da: row.get('confermato_da'),
+      pdf_link: row.get('pdf_link'),
+      importo_totale: row.get('importo_totale'),
+      note: row.get('note') || '',
+      txt: row.get('txt') || '',
+      codice_fornitore: row.get('codice_fornitore') || '',
+      testo_ddt: row.get('testo_ddt') || '',
+      item_noconv: row.get('item_noconv') || '',
+      storico_modifiche: row.get('storico_modifiche') || '',
+      errori_consegna: row.get('errori_consegna') || ''
+    };
+    
+    // ✅ FLAG: Presenza errori
+    const erroriConsegnaValue = String(invoiceData.errori_consegna || '').trim();
+    const noteValue = String(invoiceData.note || '').trim();
+    const itemNoConvValue = String(invoiceData.item_noconv || '').trim();
+    
+    invoiceData.has_errors = (
+      erroriConsegnaValue !== '' || 
+      noteValue !== '' || 
+      itemNoConvValue !== ''
+    );
+    
+    // ✅ FLAG: Presenza cronologia
+    const storicoValue = String(invoiceData.storico_modifiche || '').trim();
+    invoiceData.has_history = storicoValue !== '';
+    
+    // ✅ CONTEGGIO: Numero modifiche in cronologia
+    if (invoiceData.has_history) {
+      try {
+        const storicoArray = JSON.parse(storicoValue);
+        invoiceData.history_count = Array.isArray(storicoArray) ? storicoArray.length : 0;
+      } catch {
+        invoiceData.history_count = 0;
+      }
+    } else {
+      invoiceData.history_count = 0;
+    }
+    
+    console.log(`✅ Fattura recuperata: ${invoiceData.numero}`);
+    console.log(`   has_errors: ${invoiceData.has_errors}`);
+    console.log(`   has_history: ${invoiceData.has_history} (${invoiceData.history_count} modifiche)`);
+    
+    res.json({
+      success: true,
+      invoice: invoiceData
+    });
+    
+  } catch (error) {
+    console.error('❌ Errore recupero fattura:', error);
+    res.status(500).json({ error: 'Impossibile recuperare la fattura: ' + error.message });
+  }
+});
+
+// ==========================================
+// ✅ NUOVO: GET /api/invoices/:id/errors - RECUPERA ERRORI FATTURA
+// ==========================================
+app.get('/api/invoices/:id/errors', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('🔄 GET /api/invoices/:id/errors ricevuta per ID:', id);
+    
+    const sheet = await getGoogleSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === id.toString());
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Fattura non trovata' });
+    }
+    
+    const errorsData = {
+      fattura_id: row.get('id'),
+      numero: row.get('numero'),
+      fornitore: row.get('fornitore'),
+      punto_vendita: row.get('punto_vendita'),
+      data_consegna: row.get('data_consegna'),
+      confermato_da: row.get('confermato_da'),
+      has_errors: false,
+      errori_strutturati: null,
+      note_errori_legacy: null,
+      errori_conversione_legacy: null
+    };
+    
+    // ✅ Errori strutturati (nuovo formato)
+    const erroriConsegnaValue = String(row.get('errori_consegna') || '').trim();
+    if (erroriConsegnaValue !== '') {
+      try {
+        const erroriParsed = JSON.parse(erroriConsegnaValue);
+        errorsData.errori_strutturati = erroriParsed;
+        errorsData.has_errors = true;
+        console.log(`   ✅ Errori strutturati trovati: ${erroriParsed.righe_modificate || 0} righe modificate`);
+      } catch (parseError) {
+        console.warn('   ⚠️ Errore parsing errori_consegna:', parseError.message);
+      }
+    }
+    
+    // ✅ Backward compatibility: note legacy
+    const noteValue = String(row.get('note') || '').trim();
+    if (noteValue !== '') {
+      errorsData.note_errori_legacy = noteValue;
+      errorsData.has_errors = true;
+      console.log('   ⚠️ Note errori legacy trovate');
+    }
+    
+    // ✅ Backward compatibility: item_noconv legacy
+    const itemNoConvValue = String(row.get('item_noconv') || '').trim();
+    if (itemNoConvValue !== '') {
+      errorsData.errori_conversione_legacy = itemNoConvValue;
+      errorsData.has_errors = true;
+      console.log('   ⚠️ Errori conversione legacy trovati');
+    }
+    
+    if (!errorsData.has_errors) {
+      console.log('   ℹ️ Nessun errore trovato per questa fattura');
+    }
+    
+    res.json({
+      success: true,
+      errors: errorsData
+    });
+    
+  } catch (error) {
+    console.error('❌ Errore recupero errori fattura:', error);
+    res.status(500).json({ error: 'Impossibile recuperare gli errori: ' + error.message });
+  }
+});
+
+// ==========================================
+// ✅ NUOVO: GET /api/invoices/:id/history - RECUPERA CRONOLOGIA FATTURA
+// ==========================================
+app.get('/api/invoices/:id/history', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    console.log('🔄 GET /api/invoices/:id/history ricevuta per ID:', id);
+    
+    const sheet = await getGoogleSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === id.toString());
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Fattura non trovata' });
+    }
+    
+    const historyData = {
+      fattura_id: row.get('id'),
+      numero: row.get('numero'),
+      fornitore: row.get('fornitore'),
+      punto_vendita: row.get('punto_vendita'),
+      has_history: false,
+      modifiche: []
+    };
+    
+    const storicoValue = String(row.get('storico_modifiche') || '').trim();
+    
+    if (storicoValue !== '') {
+      try {
+        const storicoArray = JSON.parse(storicoValue);
+        
+        if (Array.isArray(storicoArray) && storicoArray.length > 0) {
+          // Ordina per timestamp (più recenti prima)
+          historyData.modifiche = storicoArray.sort((a, b) => {
+            const dateA = new Date(a.timestamp || 0);
+            const dateB = new Date(b.timestamp || 0);
+            return dateB - dateA;
+          });
+          
+          historyData.has_history = true;
+          console.log(`   ✅ Cronologia trovata: ${historyData.modifiche.length} modifiche`);
+          
+          // Log dettaglio modifiche
+          historyData.modifiche.forEach((mod, idx) => {
+            console.log(`   Modifica ${idx + 1}:`, {
+              campo: mod.campo,
+              da: mod.valore_precedente,
+              a: mod.valore_nuovo,
+              quando: mod.data_modifica,
+              chi: mod.modificato_da
+            });
+          });
+        } else {
+          console.log('   ℹ️ Storico modifiche vuoto');
+        }
+      } catch (parseError) {
+        console.warn('   ⚠️ Errore parsing storico_modifiche:', parseError.message);
+      }
+    } else {
+      console.log('   ℹ️ Nessuna cronologia presente per questa fattura');
+    }
+    
+    res.json({
+      success: true,
+      history: historyData
+    });
+    
+  } catch (error) {
+    console.error('❌ Errore recupero cronologia fattura:', error);
+    res.status(500).json({ error: 'Impossibile recuperare la cronologia: ' + error.message });
+  }
+});
+
+// ==========================================
 // ✅ NUOVO: Endpoint per parsing DDT
 // ==========================================
 app.get('/api/invoices/:id/parse-ddt', authenticateToken, async (req, res) => {
@@ -1086,7 +1307,6 @@ app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) =
     
     console.log(`⚠️ Registrando errori: ${erroriData.righe_modificate} righe modificate`);
     
-    // ✅ Converti erroriData in JSON string per salvarlo
     const erroriConsegnaJson = JSON.stringify(erroriData);
     
     // Salva in Google Sheet
@@ -1224,7 +1444,6 @@ Data: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
       console.error('❌ Errore chiamata webhook n8n:', webhookError.message);
     }
     
-    // ✅ FIX: Genera file TXT con errori_consegna incluso
     const invoiceDataForTxt = {
       id: row.get('id'),
       numero: row.get('numero'),
@@ -1237,7 +1456,7 @@ Data: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
       codice_fornitore: row.get('codice_fornitore') || '',
       note: sanitizeText(note_testuali || ''),
       item_noconv: row.get('item_noconv') || '',
-      errori_consegna: erroriConsegnaJson  // ✅ AGGIUNTO: Passa il JSON degli errori
+      errori_consegna: erroriConsegnaJson
     };
     
     try {
@@ -1331,7 +1550,6 @@ app.put('/api/invoices/:id', authenticateToken, async (req, res) => {
       updates.note = sanitizeText(note);
     }
     
-    // ✅ NUOVO: Gestisci aggiornamento errori_consegna
     if (typeof errori_consegna === 'string' && errori_consegna.trim() !== '') {
       updates.errori_consegna = errori_consegna;
       console.log('✅ Aggiornamento errori_consegna ricevuto');
@@ -1847,46 +2065,43 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
           
           const errorDetails = {};
 
-          // ✅ NUOVO: Leggi errori_consegna strutturati
-const erroriConsegnaValue = String(relatedInvoice.errori_consegna || '').trim();
-console.log(`\n🔍 CONTROLLO ERRORI:`);
-console.log(`   Colonna "errori_consegna": "${erroriConsegnaValue.substring(0, 100)}..."`);
+          const erroriConsegnaValue = String(relatedInvoice.errori_consegna || '').trim();
+          console.log(`\n🔍 CONTROLLO ERRORI:`);
+          console.log(`   Colonna "errori_consegna": "${erroriConsegnaValue.substring(0, 100)}..."`);
 
-if (erroriConsegnaValue !== '') {
-  try {
-    const erroriParsed = JSON.parse(erroriConsegnaValue);
-    errorDetails.errori_consegna = erroriParsed;
-    console.log(`   ✅ Errori consegna strutturati trovati!`);
-    console.log(`   Righe modificate: ${erroriParsed.righe_modificate || 0}`);
-    console.log(`   Note testuali: ${erroriParsed.note_testuali ? 'Sì' : 'No'}`);
-  } catch (parseError) {
-    console.warn(`   ⚠️ Errore parsing errori_consegna:`, parseError.message);
-  }
-} else {
-  console.log(`   ℹ️ Nessun errore strutturato (errori_consegna vuoto)`);
-}
+          if (erroriConsegnaValue !== '') {
+            try {
+              const erroriParsed = JSON.parse(erroriConsegnaValue);
+              errorDetails.errori_consegna = erroriParsed;
+              console.log(`   ✅ Errori consegna strutturati trovati!`);
+              console.log(`   Righe modificate: ${erroriParsed.righe_modificate || 0}`);
+              console.log(`   Note testuali: ${erroriParsed.note_testuali ? 'Sì' : 'No'}`);
+            } catch (parseError) {
+              console.warn(`   ⚠️ Errore parsing errori_consegna:`, parseError.message);
+            }
+          } else {
+            console.log(`   ℹ️ Nessun errore strutturato (errori_consegna vuoto)`);
+          }
 
-// Mantieni backward compatibility con "note" (legacy)
-const noteValue = String(relatedInvoice.note || '').trim();
-console.log(`   Colonna "note" (legacy): "${noteValue}"`);
+          const noteValue = String(relatedInvoice.note || '').trim();
+          console.log(`   Colonna "note" (legacy): "${noteValue}"`);
 
-if (noteValue !== '') {
-  errorDetails.note_errori = noteValue;
-  console.log(`   ⚠️ Note errori legacy trovate!`);
-} else {
-  console.log(`   ✅ Nessuna nota legacy`);
-}
+          if (noteValue !== '') {
+            errorDetails.note_errori = noteValue;
+            console.log(`   ⚠️ Note errori legacy trovate!`);
+          } else {
+            console.log(`   ✅ Nessuna nota legacy`);
+          }
 
-// Mantieni backward compatibility con item_noconv
-const itemNoConvValue = String(relatedInvoice.item_noconv || '').trim();
-console.log(`   Colonna "item_noconv" (legacy): "${itemNoConvValue}"`);
+          const itemNoConvValue = String(relatedInvoice.item_noconv || '').trim();
+          console.log(`   Colonna "item_noconv" (legacy): "${itemNoConvValue}"`);
 
-if (itemNoConvValue !== '') {
-  errorDetails.item_noconv = itemNoConvValue;
-  console.log(`   ⚠️ Errore conversione trovato!`);
-} else {
-  console.log(`   ✅ Nessun errore conversione`);
-}
+          if (itemNoConvValue !== '') {
+            errorDetails.item_noconv = itemNoConvValue;
+            console.log(`   ⚠️ Errore conversione trovato!`);
+          } else {
+            console.log(`   ✅ Nessun errore conversione`);
+          }
 
           if (Object.keys(errorDetails).length > 0) {
             errorDetails.data_consegna = relatedInvoice.data_consegna;
