@@ -1031,14 +1031,14 @@ app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) =
     
     // Prepara oggetto errori
     const erroriData = {
-      timestamp: new Date().toISOString(),
-      data_consegna: sanitizeDateSafe(data_consegna),
-      utente: req.user.email,
-      modifiche: modifiche_righe || [],
-      note_testuali: sanitizeText(note_testuali || ''),
-      righe_modificate: modifiche_righe?.filter(m => m.modificato).length || 0,
-      totale_righe: modifiche_righe?.length || 0
-    };
+  timestamp: new Date().toISOString(),
+  data_consegna: sanitizeDateSafe(data_consegna),
+  utente: req.user.email,
+  modifiche: modifiche_righe?.filter(m => m.modificato) || [],  // <-- SOLO MODIFICATE
+  note_testuali: sanitizeText(note_testuali || ''),
+  righe_modificate: modifiche_righe?.filter(m => m.modificato).length || 0,
+  totale_righe: modifiche_righe?.length || 0
+};
     
     console.log(`⚠️ Registrando errori: ${erroriData.righe_modificate} righe modificate`);
     
