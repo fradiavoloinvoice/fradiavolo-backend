@@ -249,9 +249,11 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const nomeFornitorePulito = cleanForFilename(nomeFornitore);
     const codicePVPulito = cleanForFilename(codicePV);
 
-    const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
-    const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
-    const hasErrors = hasNoteErrors || hasConversionErrors;
+    const erroriConsegna = invoiceData.errori_consegna || '';
+const hasStructuredErrors = erroriConsegna && erroriConsegna.trim() !== '';
+const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
+const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
+const hasErrors = hasStructuredErrors || hasNoteErrors || hasConversionErrors;
     
     const errorSuffix = hasErrors ? '_ERRORI' : '';
 
