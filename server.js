@@ -213,9 +213,6 @@ const parseDDTCompleto = (testoDDT) => {
 // ==========================================
 // GENERAZIONE FILE TXT (per fatture consegnate)
 // ==========================================
-// ==========================================
-// GENERAZIONE FILE TXT (per fatture consegnate)
-// ==========================================
 const generateTxtFile = async (invoiceData, isModification = false) => {
   try {
     console.log('📄 Generando file TXT per fattura:', invoiceData.id, isModification ? '(MODIFICA)' : '(NUOVA)');
@@ -227,7 +224,6 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const contenutoTxt = invoiceData.txt || '';
     const noteErrori = invoiceData.note || '';
     const itemNoConv = invoiceData.item_noconv || '';
-    // ✅ AGGIUNTO: Leggi errori_consegna
     const erroriConsegna = invoiceData.errori_consegna || '';
 
     const negozio = negozi.find(n => n.nome === puntoVendita);
@@ -254,7 +250,6 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const nomeFornitorePulito = cleanForFilename(nomeFornitore);
     const codicePVPulito = cleanForFilename(codicePV);
 
-    // ✅ FIX: Controlla correttamente tutti i tipi di errori
     const hasStructuredErrors = erroriConsegna && erroriConsegna.trim() !== '';
     const hasNoteErrors = noteErrori && noteErrori.trim() !== '';
     const hasConversionErrors = itemNoConv && itemNoConv.trim() !== '';
@@ -265,10 +260,13 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
     const fileName = `${numeroDocPulito}_${dataFormatted}_${nomeFornitorePulito}_${codicePVPulito}${errorSuffix}.txt`;
     const filePath = path.join(TXT_FILES_DIR, fileName);
 
-    // ✅ NUOVO: Cerca e rimuovi file esistenti per questa fattura
+    // ✅ FIX: Dichiara existingFiles all'inizio della funzione
+    let existingFiles = [];
+
+    // NUOVO: Cerca e rimuovi file esistenti per questa fattura
     try {
       const allFiles = await fs.readdir(TXT_FILES_DIR);
-      const existingFiles = allFiles.filter(file => {
+      existingFiles = allFiles.filter(file => {
         // Cerca file che iniziano con lo stesso numero documento
         return file.startsWith(numeroDocPulito + '_') && 
                file.endsWith('.txt') && 
@@ -319,7 +317,7 @@ const generateTxtFile = async (invoiceData, isModification = false) => {
       hasErrors,
       noteErrori: hasErrors ? (noteErrori || itemNoConv) : null,
       isModification,
-      replacedFiles: existingFiles?.length || 0  // ✅ NUOVO: Indica quanti file sono stati sostituiti
+      replacedFiles: existingFiles.length  // ✅ FIX: Ora existingFiles è sempre definito
     };
   } catch (error) {
     console.error('❌ Errore generazione file TXT:', error);
