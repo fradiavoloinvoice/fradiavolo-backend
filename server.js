@@ -1044,11 +1044,12 @@ app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) =
     
     // Salva in Google Sheet
     row.set('errori_consegna', JSON.stringify(erroriData));
-    row.set('stato', 'consegnato');
-    row.set('data_consegna', sanitizeDateSafe(data_consegna));
-    row.set('confermato_da', req.user.email);
-    row.set('note', sanitizeText(note_testuali || ''));
-    await row.save();
+row.set('stato', 'consegnato');
+row.set('data_consegna', sanitizeDateSafe(data_consegna));
+row.set('confermato_da', req.user.email);
+// ✅ NON salviamo più in 'note' - tutto è in 'errori_consegna'
+// row.set('note', sanitizeText(note_testuali || '')); ← RIMOSSO
+await row.save();
     
     console.log('💾 Errori salvati in Google Sheet');
     
@@ -1775,26 +1776,46 @@ app.get('/api/txt-files/:filename/content', authenticateToken, async (req, res) 
           
           const errorDetails = {};
 
-          const noteValue = String(relatedInvoice.note || '').trim();
-          console.log(`\n🔍 CONTROLLO ERRORI:`);
-          console.log(`   Colonna "note": "${noteValue}"`);
-          
-          if (noteValue !== '') {
-            errorDetails.note_errori = noteValue;
-            console.log(`   ⚠️ Errore consegna trovato!`);
-          } else {
-            console.log(`   ✅ Nessun errore consegna`);
-          }
+          // ✅ NUOVO: Leggi errori_consegna strutturati
+const erroriConsegnaValue = String(relatedInvoice.errori_consegna || '').trim();
+console.log(`\n🔍 CONTROLLO ERRORI:`);
+console.log(`   Colonna "errori_consegna": "${erroriConsegnaValue.substring(0, 100)}..."`);
 
-          const itemNoConvValue = String(relatedInvoice.item_noconv || '').trim();
-          console.log(`   Colonna "item_noconv": "${itemNoConvValue}"`);
+if (erroriConsegnaValue !== '') {
+  try {
+    const erroriParsed = JSON.parse(erroriConsegnaValue);
+    errorDetails.errori_consegna = erroriParsed;
+    console.log(`   ✅ Errori consegna strutturati trovati!`);
+    console.log(`   Righe modificate: ${erroriParsed.righe_modificate || 0}`);
+    console.log(`   Note testuali: ${erroriParsed.note_testuali ? 'Sì' : 'No'}`);
+  } catch (parseError) {
+    console.warn(`   ⚠️ Errore parsing errori_consegna:`, parseError.message);
+  }
+} else {
+  console.log(`   ℹ️ Nessun errore strutturato (errori_consegna vuoto)`);
+}
 
-          if (itemNoConvValue !== '') {
-            errorDetails.item_noconv = itemNoConvValue;
-            console.log(`   ⚠️ Errore conversione trovato!`);
-          } else {
-            console.log(`   ✅ Nessun errore conversione`);
-          }
+// Mantieni backward compatibility con "note" (legacy)
+const noteValue = String(relatedInvoice.note || '').trim();
+console.log(`   Colonna "note" (legacy): "${noteValue}"`);
+
+if (noteValue !== '') {
+  errorDetails.note_errori = noteValue;
+  console.log(`   ⚠️ Note errori legacy trovate!`);
+} else {
+  console.log(`   ✅ Nessuna nota legacy`);
+}
+
+// Mantieni backward compatibility con item_noconv
+const itemNoConvValue = String(relatedInvoice.item_noconv || '').trim();
+console.log(`   Colonna "item_noconv" (legacy): "${itemNoConvValue}"`);
+
+if (itemNoConvValue !== '') {
+  errorDetails.item_noconv = itemNoConvValue;
+  console.log(`   ⚠️ Errore conversione trovato!`);
+} else {
+  console.log(`   ✅ Nessun errore conversione`);
+}
 
           if (Object.keys(errorDetails).length > 0) {
             errorDetails.data_consegna = relatedInvoice.data_consegna;
