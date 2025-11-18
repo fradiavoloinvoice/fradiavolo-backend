@@ -1138,7 +1138,7 @@ app.get('/api/invoices/:id', authenticateToken, async (req, res) => {
 });
 
 // ==========================================
-// ✅ NUOVO: GET /api/invoices/:id/errors - RECUPERA ERRORI FATTURA
+// ✅ CORRETTO: GET /api/invoices/:id/errors
 // ==========================================
 app.get('/api/invoices/:id/errors', authenticateToken, async (req, res) => {
   try {
@@ -1168,13 +1168,12 @@ app.get('/api/invoices/:id/errors', authenticateToken, async (req, res) => {
     };
     
     // ✅ Errori strutturati (nuovo formato)
- 
-const erroriConsegnaValue = String(row.get('errori_consegna') || '').trim();
-if (erroriConsegnaValue !== '') {
-  try {
-    const erroriParsed = JSON.parse(erroriConsegnaValue);
-    errorDetails.errori_consegna = erroriParsed;  // ✅ NOME CORRETTO
-    errorsData.has_errors = true;
+    const erroriConsegnaValue = String(row.get('errori_consegna') || '').trim();
+    if (erroriConsegnaValue !== '') {
+      try {
+        const erroriParsed = JSON.parse(erroriConsegnaValue);
+        errorsData.errori_strutturati = erroriParsed;  // ✅ CORRETTO!
+        errorsData.has_errors = true;
         console.log(`   ✅ Errori strutturati trovati: ${erroriParsed.righe_modificate || 0} righe modificate`);
       } catch (parseError) {
         console.warn('   ⚠️ Errore parsing errori_consegna:', parseError.message);
