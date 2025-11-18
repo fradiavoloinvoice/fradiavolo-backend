@@ -1067,7 +1067,7 @@ app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) =
     try {
       console.log('📡 Chiamando webhook n8n...');
       const webhookResponse = await fetch(
-        'https://andreafd.app.n8n.cloud/webhook-test/198ebdde-faee-4d0f-93aa-9c8dc138bbee',
+        'https://hook.eu1.make.com/ip6vn6iw3i8wr7kvs9h3xfygcwhed9e7',
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
