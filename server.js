@@ -581,29 +581,65 @@ const loadAllSheetData = async () => {
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
 
-    const data = rows.map(row => ({
-      id: row.get('id'),
-      numero: row.get('numero'),
-      fornitore: row.get('fornitore'),
-      data_emissione: row.get('data_emissione'),
-      data_consegna: row.get('data_consegna'),
-      stato: row.get('stato'),
-      punto_vendita: row.get('punto_vendita'),
-      confermato_da: row.get('confermato_da'),
-      pdf_link: row.get('pdf_link'),
-      importo_totale: row.get('importo_totale'),
-      note: row.get('note') || '',
-      txt: row.get('txt') || '',
-      codice_fornitore: row.get('codice_fornitore') || '',
-      testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || '',
-      storico_modifiche: row.get('storico_modifiche') || '',
-      errori_consegna: row.get('errori_consegna') || ''
-    }));
+    const data = rows.map(row => {
+      const erroriConsegnaValue = String(row.get('errori_consegna') || '').trim();
+      const noteValue = String(row.get('note') || '').trim();
+      const itemNoConvValue = String(row.get('item_noconv') || '').trim();
+      const storicoValue = String(row.get('storico_modifiche') || '').trim();
+      
+      // ✅ CALCOLA FLAG ERRORI
+      const has_errors = (
+        erroriConsegnaValue !== '' || 
+        noteValue !== '' || 
+        itemNoConvValue !== ''
+      );
+      
+      // ✅ CALCOLA FLAG CRONOLOGIA
+      const has_history = storicoValue !== '';
+      
+      // ✅ CONTA MODIFICHE
+      let history_count = 0;
+      if (has_history) {
+        try {
+          const storicoArray = JSON.parse(storicoValue);
+          history_count = Array.isArray(storicoArray) ? storicoArray.length : 0;
+        } catch {
+          history_count = 0;
+        }
+      }
+
+      return {
+        id: row.get('id'),
+        numero: row.get('numero'),
+        fornitore: row.get('fornitore'),
+        data_emissione: row.get('data_emissione'),
+        data_consegna: row.get('data_consegna'),
+        stato: row.get('stato'),
+        punto_vendita: row.get('punto_vendita'),
+        confermato_da: row.get('confermato_da'),
+        pdf_link: row.get('pdf_link'),
+        importo_totale: row.get('importo_totale'),
+        note: row.get('note') || '',
+        txt: row.get('txt') || '',
+        codice_fornitore: row.get('codice_fornitore') || '',
+        testo_ddt: row.get('testo_ddt') || '',
+        item_noconv: row.get('item_noconv') || '',
+        storico_modifiche: row.get('storico_modifiche') || '',
+        errori_consegna: row.get('errori_consegna') || '',
+        // ✅ NUOVI FLAG
+        has_errors,
+        has_history,
+        history_count
+      };
+    });
 
     const uniqueData = data.filter((invoice, index, self) =>
       index === self.findIndex(i => i.id === invoice.id)
     );
+
+    console.log(`✅ Caricati ${uniqueData.length} record`);
+    console.log(`   → Con errori: ${uniqueData.filter(d => d.has_errors).length}`);
+    console.log(`   → Con cronologia: ${uniqueData.filter(d => d.has_history).length}`);
 
     return uniqueData;
   } catch (error) {
@@ -616,25 +652,54 @@ const loadSheetData = async (puntoVendita) => {
   try {
     const sheet = await getGoogleSheet();
     const rows = await sheet.getRows();
-    let data = rows.map(row => ({
-      id: row.get('id'),
-      numero: row.get('numero'),
-      fornitore: row.get('fornitore'),
-      data_emissione: row.get('data_emissione'),
-      data_consegna: row.get('data_consegna'),
-      stato: row.get('stato'),
-      punto_vendita: row.get('punto_vendita'),
-      confermato_da: row.get('confermato_da'),
-      pdf_link: row.get('pdf_link'),
-      importo_totale: row.get('importo_totale'),
-      note: row.get('note') || '',
-      txt: row.get('txt') || '',
-      codice_fornitore: row.get('codice_fornitore') || '',
-      testo_ddt: row.get('testo_ddt') || '',
-      item_noconv: row.get('item_noconv') || '',
-      storico_modifiche: row.get('storico_modifiche') || '',
-      errori_consegna: row.get('errori_consegna') || ''
-    }));
+    
+    let data = rows.map(row => {
+      const erroriConsegnaValue = String(row.get('errori_consegna') || '').trim();
+      const noteValue = String(row.get('note') || '').trim();
+      const itemNoConvValue = String(row.get('item_noconv') || '').trim();
+      const storicoValue = String(row.get('storico_modifiche') || '').trim();
+      
+      const has_errors = (
+        erroriConsegnaValue !== '' || 
+        noteValue !== '' || 
+        itemNoConvValue !== ''
+      );
+      
+      const has_history = storicoValue !== '';
+      
+      let history_count = 0;
+      if (has_history) {
+        try {
+          const storicoArray = JSON.parse(storicoValue);
+          history_count = Array.isArray(storicoArray) ? storicoArray.length : 0;
+        } catch {
+          history_count = 0;
+        }
+      }
+
+      return {
+        id: row.get('id'),
+        numero: row.get('numero'),
+        fornitore: row.get('fornitore'),
+        data_emissione: row.get('data_emissione'),
+        data_consegna: row.get('data_consegna'),
+        stato: row.get('stato'),
+        punto_vendita: row.get('punto_vendita'),
+        confermato_da: row.get('confermato_da'),
+        pdf_link: row.get('pdf_link'),
+        importo_totale: row.get('importo_totale'),
+        note: row.get('note') || '',
+        txt: row.get('txt') || '',
+        codice_fornitore: row.get('codice_fornitore') || '',
+        testo_ddt: row.get('testo_ddt') || '',
+        item_noconv: row.get('item_noconv') || '',
+        storico_modifiche: row.get('storico_modifiche') || '',
+        errori_consegna: row.get('errori_consegna') || '',
+        has_errors,
+        has_history,
+        history_count
+      };
+    });
 
     if (puntoVendita) data = data.filter(r => r.punto_vendita === puntoVendita);
     return data;
@@ -643,6 +708,7 @@ const loadSheetData = async (puntoVendita) => {
     throw error;
   }
 };
+
 
 const loadAllMovimentazioniData = async () => {
   try {
