@@ -1052,17 +1052,113 @@ app.post('/api/invoices/:id/report-error', authenticateToken, async (req, res) =
     
     console.log('💾 Errori salvati in Google Sheet');
     
-    // Prepara payload per endpoint esterno
-    const externalPayload = {
-      numero_documento: row.get('numero'),
-      data_emissione: row.get('data_emissione'),
-      data_consegna: sanitizeDateSafe(data_consegna),
-      fornitore: row.get('fornitore'),
-      punto_vendita: row.get('punto_vendita'),
-      codice_fornitore: row.get('codice_fornitore') || '',
-      testo_ddt_originale: row.get('testo_ddt') || '',
-      errori: erroriData
-    };
+   // Prepara payload per endpoint esterno
+const externalPayload = {
+  numero_documento: row.get('numero'),
+  data_emissione: row.get('data_emissione'),
+  data_consegna: sanitizeDateSafe(data_consegna),
+  fornitore: row.get('fornitore'),
+  punto_vendita: row.get('punto_vendita'),
+  codice_fornitore: row.get('codice_fornitore') || '',
+  testo_ddt_originale: row.get('testo_ddt') || '',
+  errori: erroriData
+};
+
+// 📧 NUOVO: Crea contenuto email per fornitore
+const emailFornitore = {
+  subject: `Fradiavolo - Segnalazione errore di consegna - DDT ${row.get('numero')}`,
+  
+  // Versione HTML
+  html: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2 style="color: #dc3545; border-bottom: 3px solid #dc3545; padding-bottom: 10px;">
+        🍕 Fradiavolo - Segnalazione errore di consegna
+      </h2>
+      
+      <div style="background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0;">
+        <p style="margin: 8px 0;"><strong>Punto vendita:</strong> ${row.get('punto_vendita')}</p>
+        <p style="margin: 8px 0;"><strong>Numero documento:</strong> ${row.get('numero')}</p>
+        <p style="margin: 8px 0;"><strong>Data di emissione:</strong> ${new Date(row.get('data_emissione')).toLocaleDateString('it-IT')}</p>
+        <p style="margin: 8px 0;"><strong>Data di consegna:</strong> ${new Date(data_consegna).toLocaleDateString('it-IT')}</p>
+      </div>
+      
+      <h3 style="color: #495057; border-bottom: 2px solid #ffc107; padding-bottom: 8px;">
+        📄 DDT emesso:
+      </h3>
+      <pre style="background: #e9ecef; padding: 15px; border-radius: 4px; font-size: 12px; white-space: pre-wrap; overflow-x: auto;">${row.get('testo_ddt') || 'Non disponibile'}</pre>
+      
+      <h3 style="color: #495057; border-bottom: 2px solid #dc3545; padding-bottom: 8px; margin-top: 30px;">
+        ⚠️ Errori segnalati:
+      </h3>
+      ${erroriData.modifiche && erroriData.modifiche.length > 0 ? `
+        <div style="margin: 15px 0;">
+          ${erroriData.modifiche.map(modifica => `
+            <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 12px; margin: 10px 0; border-radius: 4px;">
+              <p style="margin: 5px 0; font-weight: bold;">Riga ${modifica.riga_numero}: ${modifica.nome || modifica.prodotto_originale || 'Prodotto'}</p>
+              <p style="margin: 5px 0; color: #856404;">
+                Codice: ${modifica.codice || 'N/A'} | 
+                Ordinato: ${modifica.quantita_originale} ${modifica.unita_misura || ''} → 
+                Ricevuto: ${modifica.quantita_ricevuta} ${modifica.unita_misura || ''}
+              </p>
+              ${modifica.motivo ? `<p style="margin: 5px 0; font-style: italic; color: #666;">Motivo: ${modifica.motivo}</p>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      ` : '<p style="color: #6c757d;">Nessuna modifica alle quantità</p>'}
+      
+      <h3 style="color: #495057; border-bottom: 2px solid #28a745; padding-bottom: 8px; margin-top: 30px;">
+        📝 Note aggiuntive:
+      </h3>
+      <div style="background: white; padding: 15px; border: 1px solid #dee2e6; border-radius: 4px;">
+        ${erroriData.note_testuali || '<em style="color: #6c757d;">Nessuna nota aggiuntiva</em>'}
+      </div>
+      
+      <div style="margin-top: 30px; padding: 15px; background: #e9ecef; border-radius: 4px; text-align: center;">
+        <p style="margin: 0; color: #6c757d; font-size: 12px;">
+          Segnalato da: ${erroriData.utente}<br>
+          Data segnalazione: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
+        </p>
+      </div>
+    </div>
+  `,
+  
+  // Versione Plain Text
+  text: `
+FRADIAVOLO - SEGNALAZIONE ERRORE DI CONSEGNA
+=============================================
+
+Punto vendita: ${row.get('punto_vendita')}
+Numero documento: ${row.get('numero')}
+Data di emissione: ${new Date(row.get('data_emissione')).toLocaleDateString('it-IT')}
+Data di consegna: ${new Date(data_consegna).toLocaleDateString('it-IT')}
+
+DDT EMESSO:
+-----------
+${row.get('testo_ddt') || 'Non disponibile'}
+
+ERRORI SEGNALATI:
+-----------------
+${erroriData.modifiche && erroriData.modifiche.length > 0 
+  ? erroriData.modifiche.map(m => 
+      `• Riga ${m.riga_numero}: ${m.nome || m.prodotto_originale || 'Prodotto'}
+   Codice: ${m.codice || 'N/A'}
+   Ordinato: ${m.quantita_originale} ${m.unita_misura || ''} → Ricevuto: ${m.quantita_ricevuta} ${m.unita_misura || ''}
+   ${m.motivo ? 'Motivo: ' + m.motivo : ''}`
+    ).join('\n\n')
+  : 'Nessuna modifica alle quantità'}
+
+NOTE AGGIUNTIVE:
+----------------
+${erroriData.note_testuali || 'Nessuna nota aggiuntiva'}
+
+---
+Segnalato da: ${erroriData.utente}
+Data: ${new Date(erroriData.timestamp).toLocaleString('it-IT')}
+  `.trim()
+};
+
+// Aggiungi al payload
+externalPayload.email_fornitore = emailFornitore;
     
     // Chiamata endpoint esterno n8n (con try/catch per non bloccare il flusso)
     try {
