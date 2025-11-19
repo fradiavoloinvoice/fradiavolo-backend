@@ -186,7 +186,25 @@ const parseRigaDDT = (riga) => {
       }
     }
   }
-  
+  // FORMATO 3: underscore + trattino (CODICE_NOME - QTA UM)
+  // Es: 19332_FETTINE EXTRA CARCIOFO OLIO"ARCO"FT.3 KG - 33 KG
+  if (riga.includes('_') && riga.includes(' - ')) {
+    const [codiceENome, qtaEUm] = riga.split(' - ');
+    const underscoreIndex = codiceENome.indexOf('_');
+    
+    if (underscoreIndex > 0) {
+      const codice = codiceENome.substring(0, underscoreIndex).trim();
+      const nome = codiceENome.substring(underscoreIndex + 1).trim();
+      
+      const qtaParts = qtaEUm.trim().split(' ');
+      const quantita = parseFloat(qtaParts[0]);
+      const um = qtaParts[qtaParts.length - 1];
+      
+      if (!isNaN(quantita) && um) {
+        return { codice, nome, um, quantita };
+      }
+    }
+  }
   console.warn('⚠️ Formato riga DDT non riconosciuto:', riga);
   return null;
 };
