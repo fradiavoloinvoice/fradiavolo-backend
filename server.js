@@ -2247,7 +2247,206 @@ app.get('/api/txt-files/stats-by-date', authenticateToken, async (req, res) => {
     res.status(500).json({ error: 'Impossibile calcolare le statistiche: ' + error.message });
   }
 });
+// ==========================================
+// ✅ NUOVI ENDPOINT: GESTIONE SEGNALAZIONI ERRORI
+// ==========================================
 
+/**
+ * GET /api/admin/segnalazioni
+ * Recupera tutte le fatture con errori non ancora segnalate ai fornitori
+ */
+app.get('/api/admin/segnalazioni', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    console.log('🔄 GET /api/admin/segnalazioni ricevuta');
+    
+    // Carica tutte le fatture
+    const allInvoices = await loadAllSheetData();
+    
+    // Filtra solo fatture con errori consegnate
+    const fattureConErrori = allInvoices.filter(invoice => {
+      // Deve essere consegnata
+      if (invoice.stato !== 'consegnato') return false;
+      
+      // Deve avere errori
+      const hasErrors = invoice.has_errors || false;
+      return hasErrors;
+    });
+    
+    // Mappa i dati in formato ottimizzato per la UI
+    const segnalazioni = fattureConErrori.map(invoice => {
+      let erroriDettaglio = null;
+      let noteErrori = '';
+      let numProdottiErrati = 0;
+      
+      // Parse errori strutturati
+      const erroriConsegnaValue = String(invoice.errori_consegna || '').trim();
+      if (erroriConsegnaValue !== '') {
+        try {
+          erroriDettaglio = JSON.parse(erroriConsegnaValue);
+          if (erroriDettaglio.modifiche) {
+            numProdottiErrati = erroriDettaglio.modifiche.length;
+          }
+          if (erroriDettaglio.note_testuali) {
+            noteErrori = erroriDettaglio.note_testuali;
+          }
+        } catch (e) {
+          console.warn('⚠️ Errore parsing errori_consegna per fattura', invoice.id);
+        }
+      }
+      
+      // Backward compatibility: note legacy
+      if (!noteErrori && invoice.note) {
+        noteErrori = invoice.note;
+      }
+      
+      return {
+        id: invoice.id,
+        numero: invoice.numero,
+        fornitore: invoice.fornitore,
+        punto_vendita: invoice.punto_vendita,
+        data_consegna: invoice.data_consegna,
+        data_emissione: invoice.data_emissione,
+        confermato_da: invoice.confermato_da,
+        errori_strutturati: erroriDettaglio,
+        note_errori: noteErrori,
+        num_prodotti_errati: numProdottiErrati,
+        stato_segnalazione: 'da_inviare', // Questo campo può essere esteso in futuro
+        pdf_link: invoice.pdf_link,
+        testo_ddt: invoice.testo_ddt || ''
+      };
+    });
+    
+    console.log(`✅ Trovate ${segnalazioni.length} segnalazioni da gestire`);
+    
+    res.json({
+      success: true,
+      totale: segnalazioni.length,
+      segnalazioni: segnalazioni.sort((a, b) => 
+        new Date(b.data_consegna) - new Date(a.data_consegna)
+      )
+    });
+    
+  } catch (error) {
+    console.error('❌ Errore recupero segnalazioni:', error);
+    res.status(500).json({ 
+      error: 'Impossibile recuperare le segnalazioni: ' + error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/admin/segnalazioni/:id/send
+ * Invia segnalazione errore al fornitore tramite webhook n8n
+ */
+app.post('/api/admin/segnalazioni/:id/send', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { 
+      email_destinatario, 
+      oggetto_email, 
+      corpo_email, 
+      webhook_url 
+    } = req.body;
+    
+    console.log('🔄 POST /api/admin/segnalazioni/:id/send ricevuta per ID:', id);
+    
+    // Validazione input
+    if (!email_destinatario || !validateEmail(email_destinatario)) {
+      return res.status(400).json({ error: 'Email destinatario non valida' });
+    }
+    if (!oggetto_email || oggetto_email.trim() === '') {
+      return res.status(400).json({ error: 'Oggetto email richiesto' });
+    }
+    if (!corpo_email || corpo_email.trim() === '') {
+      return res.status(400).json({ error: 'Corpo email richiesto' });
+    }
+    
+    // Recupera dati fattura
+    const sheet = await getGoogleSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(r => r.get('id') === id.toString());
+    
+    if (!row) {
+      return res.status(404).json({ error: 'Fattura non trovata' });
+    }
+    
+    // Prepara payload per n8n
+    const emailPayload = {
+      destinatario: sanitizeEmailSafe(email_destinatario),
+      oggetto: sanitizeText(oggetto_email),
+      corpo: corpo_email, // Mantieni formattazione HTML se presente
+      mittente: req.user.email,
+      timestamp: new Date().toISOString(),
+      fattura: {
+        id: row.get('id'),
+        numero: row.get('numero'),
+        fornitore: row.get('fornitore'),
+        punto_vendita: row.get('punto_vendita'),
+        data_consegna: row.get('data_consegna'),
+        pdf_link: row.get('pdf_link')
+      }
+    };
+    
+    // FASE 1: Per ora logghiamo solo, senza inviare realmente
+    // In FASE 2 decommenta il codice sotto per inviare a n8n
+    
+    /*
+    // URL webhook n8n (da configurare in .env)
+    const n8nWebhookUrl = webhook_url || process.env.N8N_WEBHOOK_URL;
+    
+    if (!n8nWebhookUrl) {
+      return res.status(500).json({ 
+        error: 'Webhook n8n non configurato. Aggiungi N8N_WEBHOOK_URL in .env' 
+      });
+    }
+    
+    // Invia a n8n
+    const webhookResponse = await fetch(n8nWebhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(emailPayload)
+    });
+    
+    if (!webhookResponse.ok) {
+      throw new Error(`Webhook n8n failed: ${webhookResponse.status} ${webhookResponse.statusText}`);
+    }
+    
+    const webhookResult = await webhookResponse.json();
+    console.log('✅ Email inviata tramite n8n:', webhookResult);
+    */
+    
+    // FASE 1: Log simulato
+    console.log('📧 SIMULAZIONE INVIO EMAIL:');
+    console.log('   A:', emailPayload.destinatario);
+    console.log('   Oggetto:', emailPayload.oggetto);
+    console.log('   Corpo (primi 100 char):', emailPayload.corpo.substring(0, 100));
+    console.log('   Da:', emailPayload.mittente);
+    console.log('   Fattura:', emailPayload.fattura.numero);
+    
+    // Aggiorna stato segnalazione (opzionale: puoi aggiungere una nuova colonna al Google Sheet)
+    // row.set('segnalazione_inviata', new Date().toISOString());
+    // row.set('segnalazione_inviata_da', req.user.email);
+    // await row.save();
+    
+    res.json({
+      success: true,
+      message: '✅ Segnalazione preparata con successo (FASE 1: solo log)',
+      email_preview: {
+        destinatario: emailPayload.destinatario,
+        oggetto: emailPayload.oggetto,
+        corpo_preview: emailPayload.corpo.substring(0, 200) + '...'
+      },
+      fattura: emailPayload.fattura,
+      nota: 'In FASE 2 verrà effettivamente inviata tramite n8n'
+    });
+    
+  } catch (error) {
+    console.error('❌ Errore invio segnalazione:', error);
+    res.status(500).json({ 
+      error: 'Impossibile inviare la segnalazione: ' + error.message 
+    });
+  }
+});
 app.get('/api/health', (req, res) => {
   res.json({
     success: true,
