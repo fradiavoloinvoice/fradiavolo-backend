@@ -146,24 +146,41 @@ const aggiungiModificaAlloStorico = (storicoAttuale, campoModificato, valorePrec
   return JSON.stringify(storico);
 };
 
-// ==========================================
-// ✅ NUOVO: Parser DDT multi-formato
-// ==========================================
 const parseRigaDDT = (riga) => {
   riga = riga.trim();
   if (!riga) return null;
   
-  // FORMATO 1: pipe separato (CODICE | NOME | UM | QTA)
-  // Es: D7264 | BIB PEPSI COLA REGULAR 33 CL X 24 VP | KAR | 3
+  // FORMATO PIPE: Controlla sia 5 che 4 campi
   if (riga.includes('|')) {
     const parts = riga.split('|').map(p => p.trim());
+    
+    // FORMATO 1A: pipe con 5 campi (CODICE | NOME | UM | QTA | NOTE)
+    // Es: 003563 | IMPASTO SALSICCIA SUINO S/V F 5,0 | KG | 5 | 5 KG totali
+    if (parts.length === 5) {
+      const quantita = parseFloat(parts[3]);
+      if (!isNaN(quantita)) {
+        return {
+          codice: parts[0],
+          nome: parts[1],
+          um: parts[2],
+          quantita: quantita,
+          note: parts[4]
+        };
+      }
+    }
+    
+    // FORMATO 1B: pipe con 4 campi (CODICE | NOME | UM | QTA)
+    // Es: D7264 | BIB PEPSI COLA REGULAR 33 CL X 24 VP | KAR | 3
     if (parts.length === 4) {
-      return {
-        codice: parts[0],
-        nome: parts[1],
-        um: parts[2],
-        quantita: parseFloat(parts[3])
-      };
+      const quantita = parseFloat(parts[3]);
+      if (!isNaN(quantita)) {
+        return {
+          codice: parts[0],
+          nome: parts[1],
+          um: parts[2],
+          quantita: quantita
+        };
+      }
     }
   }
   
@@ -186,25 +203,7 @@ const parseRigaDDT = (riga) => {
       }
     }
   }
-  // FORMATO 3: underscore + trattino (CODICE_NOME - QTA UM)
-  // Es: 19332_FETTINE EXTRA CARCIOFO OLIO"ARCO"FT.3 KG - 33 KG
-  if (riga.includes('_') && riga.includes(' - ')) {
-    const [codiceENome, qtaEUm] = riga.split(' - ');
-    const underscoreIndex = codiceENome.indexOf('_');
-    
-    if (underscoreIndex > 0) {
-      const codice = codiceENome.substring(0, underscoreIndex).trim();
-      const nome = codiceENome.substring(underscoreIndex + 1).trim();
-      
-      const qtaParts = qtaEUm.trim().split(' ');
-      const quantita = parseFloat(qtaParts[0]);
-      const um = qtaParts[qtaParts.length - 1];
-      
-      if (!isNaN(quantita) && um) {
-        return { codice, nome, um, quantita };
-      }
-    }
-  }
+  
   console.warn('⚠️ Formato riga DDT non riconosciuto:', riga);
   return null;
 };
